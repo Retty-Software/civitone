@@ -1,0 +1,56 @@
+--- a/components/custom_board/pcm51xx/pcm51xx.c
++++ b/components/custom_board/pcm51xx/pcm51xx.c
+@@ -32,6 +32,9 @@
+ #include "i2c_bus.h"
+ #include "pcm51xx_reg_cfg.h"
+ #include "driver/gpio.h"
++#include <string.h>
++#include "freertos/FreeRTOS.h"
++#include "freertos/task.h"
+ 
+ static const char *TAG = "PCM51XX";
+ 
+@@ -119,6 +122,35 @@
+   return ret;
+ }
+ 
++// Civitone bench diagnostic: poll the DAC's status registers 4x a second and
++// log every change. Shows clock errors, analog mute and power-state changes
++// that the player task can't see.
++static void pcm51xx_monitor_task(void *arg) {
++  // page-0 registers: 94 clock status, 95 clock error, 108 analog mute
++  // monitor, 118 power state
++  const uint8_t regs[] = {94, 95, 108, 118};
++  int last[4] = {-1, -1, -1, -1};
++  for (;;) {
++    vTaskDelay(pdMS_TO_TICKS(250));
++    int now[4];
++    bool changed = false;
++    for (int i = 0; i < 4; i++) {
++      uint8_t reg = regs[i], val = 0;
++      if (i2c_bus_read_bytes(i2c_handler, pcm51xx_addr, &reg, 1, &val, 1) != ESP_OK) {
++        now[i] = -2;
++      } else {
++        now[i] = val;
++      }
++      if (now[i] != last[i]) changed = true;
++    }
++    if (changed) {
++      ESP_LOGW(TAG, "CIVI DAC clk(94)=%02x clkerr(95)=%02x amute(108)=%02x state(118)=%02x",
++               now[0] & 0xff, now[1] & 0xff, now[2] & 0xff, now[3] & 0xff);
++      memcpy(last, now, sizeof(last));
++    }
++  }
++}
++
+ esp_err_t pcm51xx_init(audio_hal_codec_config_t *codec_cfg) {
+   ESP_LOGD(TAG, "%s: codec_cfg=%p", __func__, codec_cfg);
+   esp_err_t ret = ESP_OK;
+@@ -167,6 +199,7 @@
+     gpio_set_level(PCM51XX_MUTE_PIN, 1);
+     ESP_LOGI(TAG, "Amp enable pin %d HIGH (stays on)", PCM51XX_MUTE_PIN);
+   }
++  xTaskCreate(pcm51xx_monitor_task, "dac_mon", 3072, NULL, 2, NULL);
+   return ret;
+ }
+ 

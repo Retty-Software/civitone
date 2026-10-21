@@ -1,0 +1,33 @@
+diff --git a/components/lightsnapcast/player.c b/components/lightsnapcast/player.c
+index ba4cb64..689331b 100644
+--- a/components/lightsnapcast/player.c
++++ b/components/lightsnapcast/player.c
+@@ -647,6 +647,19 @@ int32_t player_latency_insert(int64_t newValue) {
+   int64_t medianValue;
+ 
+   medianValue = MEDIANFILTER_Insert(&latencyMedianFilter, newValue);
++
++  // Civitone: log jumps in the server clock offset estimate. Used to find
++  // out whether hard resyncs are caused by the estimate moving.
++  {
++    static int64_t lastLogged = 0;
++    int64_t step = medianValue - lastLogged;
++    if (lastLogged != 0 && (step > 2000 || step < -2000)) {
++      ESP_LOGW(TAG, "CIVI clock offset moved %lldus (sample %lldus from median)",
++               step, newValue - medianValue);
++    }
++    lastLogged = medianValue;
++  }
++
+   if (xSemaphoreTake(latencyBufSemaphoreHandle, pdMS_TO_TICKS(0)) == pdTRUE) {
+     if (MEDIANFILTER_isFull(&latencyMedianFilter, LATENCY_MEDIAN_FILTER_FULL)) {
+       xSemaphoreGive(latencyBufFullSemaphoreHandle);
+@@ -2020,6 +2033,8 @@ static void player_task(void *pvParameters) {
+                      heap_caps_get_free_size(MALLOC_CAP_32BIT),
+                      heap_caps_get_largest_free_block(MALLOC_CAP_32BIT),
+                      msgWaiting, ap.rssi);
++            ESP_LOGW(TAG, "CIVI resync medians: short %lldus, mini %lldus",
++                     shortMedian, miniMedian);
+ 
+             my_gptimer_stop(gptimer);
+ 

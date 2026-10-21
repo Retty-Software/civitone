@@ -1,0 +1,60 @@
+diff --git a/components/custom_board/pcm51xx/pcm51xx.c b/components/custom_board/pcm51xx/pcm51xx.c
+index 6d878e7..d4f5d43 100644
+--- a/components/custom_board/pcm51xx/pcm51xx.c
++++ b/components/custom_board/pcm51xx/pcm51xx.c
+@@ -160,6 +160,13 @@ esp_err_t pcm51xx_init(audio_hal_codec_config_t *codec_cfg) {
+       pcm51xx_init_seq, sizeof(pcm51xx_init_seq) / sizeof(pcm51xx_init_seq[0]));
+ 
+   PCM51XX_ASSERT(ret, "Fail to iniitialize pcm51xx PA", ESP_FAIL);
++
++  // Civitone: the pin drives the amp enable (TPA3110 SD#), which pops every
++  // time it toggles. Turn the amp on once, here, and mute in the DAC only.
++  if (PCM51XX_MUTE_PIN_VALID(PCM51XX_MUTE_PIN)) {
++    gpio_set_level(PCM51XX_MUTE_PIN, 1);
++    ESP_LOGI(TAG, "Amp enable pin %d HIGH (stays on)", PCM51XX_MUTE_PIN);
++  }
+   return ret;
+ }
+ 
+@@ -188,11 +195,11 @@ esp_err_t pcm51xx_set_volume(int vol) {
+     // 0% = mute
+     register_value = 0xFF;
+   } else {
+-    // Map 1-100% to register values 0xFE-0x30
+-    // Linear mapping: 100% -> 0x30 (48), 1% -> 0xFE (254)
+-    // Formula: reg_val = 0x30 + (100 - vol) * (0xFE - 0x30) / 99
+-    //        = 48 + (100 - vol) * 206 / 99
+-    register_value = 0x30 + ((100 - vol) * 206) / 99;
++    // Civitone: map 1-100% onto -60..0 dB (0.5 dB per register step) so the
++    // whole slider is usable. Upstream spread it over -103..0 dB, which left
++    // everything below ~60% inaudible.
++    // 100% -> 0x30 (0 dB), 1% -> 0xA8 (-60 dB)
++    register_value = 0x30 + ((100 - vol) * 120) / 99;
+   }
+ 
+   uint8_t cmd[2] = {0, 0};
+@@ -244,19 +251,15 @@ esp_err_t pcm51xx_set_mute(bool enable) {
+   }
+   ret |= i2c_bus_write_bytes(i2c_handler, pcm51xx_addr, &cmd[0], 1, &cmd[1], 1);
+ 
+-  // Control GPIO mute pin if configured
+-  if (PCM51XX_MUTE_PIN_VALID(PCM51XX_MUTE_PIN)) {
+-    // Set pin HIGH for unmute, LOW for mute
+-    gpio_set_level(PCM51XX_MUTE_PIN, enable ? 0 : 1);
+-    ESP_LOGD(TAG, "GPIO mute pin %d set to %d", PCM51XX_MUTE_PIN, enable ? 0 : 1);
+-  }
++  // Civitone: amp enable pin is left on (set in pcm51xx_init). The DAC's
++  // register mute ramps the volume, so muting here is silent.
+ 
+   PCM51XX_ASSERT(ret, "Fail to set mute", ESP_FAIL);
+-  
++
+   // Store mute state
+   pcm51xx_state.is_muted = enable;
+-  
+-  ESP_LOGI(TAG, "Mute %s (register + GPIO)", enable ? "enabled" : "disabled");
++
++  ESP_LOGI(TAG, "Mute %s (register only)", enable ? "enabled" : "disabled");
+   return ret;
+ }
+ 

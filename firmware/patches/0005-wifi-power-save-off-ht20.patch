@@ -1,0 +1,41 @@
+--- a/components/network_interface/wifi_interface.c	2026-10-12 17:53:09
++++ b/components/network_interface/wifi_interface.c	2026-10-12 17:53:25
+@@ -196,8 +196,9 @@
+   esp_wifi_netif = esp_netif_create_wifi(WIFI_IF_STA, &esp_netif_config);
+   esp_wifi_set_default_wifi_sta_handlers();
+ 
+-  // esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+-  //   esp_wifi_set_ps(WIFI_PS_NONE);
++  // Civitone: power save is set to WIFI_PS_NONE after esp_wifi_start() below.
++  // The IDF default (WIFI_PS_MIN_MODEM) sleeps the radio between beacons,
++  // which shows up as 100 ms - 1.3 s ping spikes and choppy audio.
+ 
+ #if ENABLE_WIFI_PROVISIONING
+   /* Start Wi-Fi station */
+@@ -206,7 +207,7 @@
+   ESP_ERROR_CHECK(esp_wifi_set_protocol(
+       WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N));
+ 
+-  ESP_ERROR_CHECK(esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT40));
++  ESP_ERROR_CHECK(esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT20));
+ 
+   wifi_config_t wifi_config;
+   ESP_ERROR_CHECK(esp_wifi_get_config(WIFI_IF_STA, &wifi_config));
+@@ -221,6 +222,8 @@
+                                              &lost_ip_event_handler, NULL));
+ 
+   ESP_ERROR_CHECK(esp_wifi_start());
++  ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
++  ESP_LOGI(TAG, "CIVI wifi power save off, HT20");
+ 
+   ESP_LOGI(TAG, "Starting provisioning");
+ 
+@@ -263,6 +266,8 @@
+                                              &lost_ip_event_handler, NULL));
+ 
+   ESP_ERROR_CHECK(esp_wifi_start());
++  ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
++  ESP_LOGI(TAG, "CIVI wifi power save off, HT20");
+ 
+   ESP_LOGI(TAG, "wifi_init_sta finished. Trying to connect to %s",
+            wifi_config.sta.ssid);

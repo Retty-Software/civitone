@@ -1,0 +1,14 @@
+Civitone
+Copyright (C) 2026 Retty Software
+
+Controller, console, Civitone Source, installer, deploy scripts and docs:
+AGPL-3.0-or-later (LICENSE).
+
+Firmware (firmware/): GPL-3.0-or-later (firmware/LICENSE). It builds on
+snapclient by CarlosDerSeher and contributors (GPL-3.0), included as the
+firmware/snapclient submodule and patched by firmware/patches/.
+
+The controller runs Snapcast's snapserver (GPL-3.0) as a separate program.
+
+"Civitone" and the Civitone logo are trademarks of Retty Software; see
+TRADEMARKS.md.

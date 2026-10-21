@@ -1,0 +1,65 @@
+diff --color -ruN a/components/custom_board/pcm51xx/include/pcm51xx.h b/components/custom_board/pcm51xx/include/pcm51xx.h
+--- a/components/custom_board/pcm51xx/include/pcm51xx.h	2026-10-21 16:54:48
++++ b/components/custom_board/pcm51xx/include/pcm51xx.h	2026-10-21 16:54:48
+@@ -94,6 +94,9 @@
+  */
+ esp_err_t pcm51xx_set_volume(int vol);
+ 
++// Civitone: rewrite both channels at the current volume (speaker trim changed).
++esp_err_t pcm51xx_reapply_volume(void);
++
+ /**
+  * @brief Get voice volume
+  *
+diff --color -ruN a/components/custom_board/pcm51xx/pcm51xx.c b/components/custom_board/pcm51xx/pcm51xx.c
+--- a/components/custom_board/pcm51xx/pcm51xx.c	2026-10-21 16:54:48
++++ b/components/custom_board/pcm51xx/pcm51xx.c	2026-10-21 16:55:16
+@@ -52,6 +52,20 @@
+ 
+ #define PCM51XX_MUTE_PIN_VALID(pin) ((pin) != 255)
+ 
++// Civitone: each channel drives its own speaker on the pole, with its own trim
++// and mute (civitone_ctrl, "set_speakers"). Extra attenuation for channel 0
++// (left, speaker A) or 1 (right, B) in register steps of 0.5 dB, or -1 for
++// muted. Weak: without the control channel both play at the zone volume.
++int civitone_ctrl_speaker_steps(int ch) __attribute__((weak));
++
++static uint8_t channel_reg(uint8_t base, int ch) {
++  if (base == PCM51XX_REG_VAL_MUTE || !civitone_ctrl_speaker_steps) return base;
++  int steps = civitone_ctrl_speaker_steps(ch);
++  if (steps < 0) return PCM51XX_REG_VAL_MUTE;
++  int v = base + steps;
++  return v > 0xFE ? 0xFE : v;  // 0xFE is the quietest step short of mute
++}
++
+ #define PCM51XX_ASSERT(a, format, b, ...) \
+   if ((a) != 0) {                         \
+     ESP_LOGE(TAG, format, ##__VA_ARGS__); \
+@@ -205,11 +219,11 @@
+   uint8_t cmd[2] = {0, 0};
+   esp_err_t ret = ESP_OK;
+ 
+-  cmd[1] = register_value;
+-
+   cmd[0] = PCM51XX_REG_VOL_L;
++  cmd[1] = channel_reg(register_value, 0);
+   ret = i2c_bus_write_bytes(i2c_handler, pcm51xx_addr, &cmd[0], 1, &cmd[1], 1);
+   cmd[0] = PCM51XX_REG_VOL_R;
++  cmd[1] = channel_reg(register_value, 1);
+   ret |= i2c_bus_write_bytes(i2c_handler, pcm51xx_addr, &cmd[0], 1, &cmd[1], 1);
+   
+   if (ret == ESP_OK) {
+@@ -219,6 +233,13 @@
+   
+   ESP_LOGD(TAG, "Volume set to %d%% (register: 0x%02x)", vol, register_value);
+   return ret;
++}
++
++// Civitone: rewrite both channels at the current volume, after a speaker's
++// trim or mute changed.
++esp_err_t pcm51xx_reapply_volume(void) {
++  if (i2c_handler == NULL) return ESP_ERR_INVALID_STATE;  // not up yet; the first volume write applies them
++  return pcm51xx_set_volume(pcm51xx_state.volume_percent);
+ }
+ 
+ esp_err_t pcm51xx_get_volume(int *value) {

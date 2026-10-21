@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Civitone Source</title>
+<style>
+:root{--bg:#f4f2ee;--card:#fff;--ink:#1d1b18;--muted:#6b665e;--faint:#8c877e;--line:#d9d4ca;--accent:#9a6a17;--good:#2f7a4a;--warn:#a66a00;--bad:#b3402f;--meter:#e7e2d8}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#17181b;--card:#222327;--ink:#ecebe8;--muted:#a19d95;--faint:#8a867f;--line:#3a3b40;--accent:#d6a64a;--good:#6cc08a;--warn:#e0a84a;--bad:#ef7d6b;--meter:#2e2f34}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:22px 16px 48px}
+header{display:flex;align-items:baseline;gap:10px;margin-bottom:16px}
+h1{font-size:22px;margin:0}
+.ver{color:var(--faint);font:500 12px ui-monospace,Menlo,monospace}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+h2{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+label{display:block;font-size:13px;font-weight:600;margin:10px 0 4px}
+input,select{font:inherit;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);width:100%;margin:0}
+input.code{font-family:ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>input,.row>select{flex:1 1 200px;width:auto}
+.btn{font:600 13px system-ui,-apple-system,"Segoe UI",sans-serif;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:9px 14px;cursor:pointer;white-space:nowrap}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.quiet{border-color:transparent;color:var(--muted)}
+.btn.danger{color:var(--bad)}
+.btn[disabled]{opacity:.5;cursor:default}
+.hint{color:var(--muted);font-size:13px;margin:6px 0 0}
+.err{color:var(--bad);font-weight:600;font-size:13px;min-height:1em;margin-top:8px}
+.src{border-top:1px solid var(--line);padding:14px 0}
+.src:first-of-type{border-top:0;padding-top:4px}
+.src .top{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.src .name{font-weight:700;font-size:16px}
+.src .what{color:var(--faint);font:500 12px ui-monospace,Menlo,monospace}
+.pill{display:inline-flex;align-items:center;gap:5px;font:600 10.5px/1 ui-monospace,Menlo,monospace;letter-spacing:.05em;text-transform:uppercase;padding:5px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.pill i{width:6px;height:6px;border-radius:50%;background:currentColor}
+.pill.good{color:var(--good)}.pill.warn{color:var(--warn)}.pill.bad{color:var(--bad)}
+.grow{flex:1}
+.meter{height:8px;border-radius:4px;background:var(--meter);overflow:hidden;margin:10px 0 4px}
+.meter b{display:block;height:100%;width:0;background:var(--good);transition:width .15s linear}
+.meter b.hot{background:var(--warn)}.meter b.clip{background:var(--bad)}
+.detail{font-size:13px;color:var(--muted)}
+.detail.bad{color:var(--bad)}
+.acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.acts select{flex:1 1 220px;width:auto}
+.acts input{flex:0 1 150px;width:auto}
+.empty{color:var(--muted);text-align:center;padding:12px 0}
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Civitone Source</h1><span class="ver" id="ver"></span></header>
+
+  <div class="card">
+    <h2>Server</h2>
+    <form class="row" id="srvForm" autocomplete="off">
+      <input id="server" placeholder="civitone.example.com" spellcheck="false" autocapitalize="off" aria-label="Server address">
+      <button class="btn primary" type="submit">Save</button>
+    </form>
+    <p class="hint">The address of your Civitone server. A name like <b>civitone.example.com</b> connects securely; on a local network use <b>192.168.1.10:8080</b>.</p>
+    <div class="err" id="srvErr"></div>
+  </div>
+
+  <div class="card">
+    <h2>Sources</h2>
+    <div id="list"></div>
+  </div>
+
+  <div class="card">
+    <h2>Add a source</h2>
+    <form id="addForm" autocomplete="off">
+      <label for="kind">What to send</label>
+      <select id="kind"></select>
+      <p class="hint" id="kindHelp"></p>
+      <div id="devWrap">
+        <label for="device" id="devLabel">Device</label>
+        <select id="device"></select>
+      </div>
+      <div id="textWrap" hidden>
+        <label for="devText" id="textLabel">Music folder</label>
+        <input id="devText" spellcheck="false" autocapitalize="off">
+      </div>
+      <label for="label">Name (the server can rename it)</label>
+      <input id="label" maxlength="40" placeholder="RadioDJ">
+      <label for="code">Adopt code</label>
+      <input id="code" class="code" maxlength="9" placeholder="7QK-M2X">
+      <p class="hint">In the console: Overview → Add nodes → New adopt code. Then approve it under Waiting for approval.</p>
+      <div class="acts"><button class="btn primary" type="submit">Add source</button></div>
+      <div class="err" id="addErr"></div>
+    </form>
+  </div>
+</main>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var st = null, editing = {};
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function api(method, url, body) {
+    return fetch(url, { method: method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined })
+      .then(function (r) { if (!r.ok) return r.text().then(function (t) { throw new Error(t || r.status); }); return r.status === 204 ? null : r.json(); });
+  }
+  var kindName = {};
+
+  var pills = {
+    live: ["good", "live"], pending: ["warn", "waiting for approval"], connecting: ["", "connecting"],
+    "needs-setup": ["warn", "needs setup"], rejected: ["bad", "rejected"], error: ["bad", "can't connect"], paused: ["", "paused"]
+  };
+
+  function meter(l) {
+    if (!l || !l.capturing) return { w: 0, cls: "" };
+    var db = Math.max(-60, l.peak_dbfs);
+    return { w: Math.round((db + 60) / 60 * 100), cls: l.peak_dbfs > -1 ? "clip" : l.peak_dbfs > -6 ? "hot" : "" };
+  }
+
+  function devOptions(kind, current) {
+    var list = kind === "system" ? st.outputs : kind === "input" ? st.inputs : [];
+    var opts = kind === "system" ? ['<option value="">Default output device</option>'] : [];
+    list.forEach(function (d) { opts.push('<option' + (d === current ? " selected" : "") + ">" + esc(d) + "</option>"); });
+    if (current && list.indexOf(current) < 0) opts.push('<option selected>' + esc(current) + " (not found)</option>");
+    return opts.join("");
+  }
+
+  function renderList() {
+    var a = document.activeElement;
+    if (a && $("list").contains(a) && (a.tagName === "INPUT" || a.tagName === "SELECT")) {
+      // Only refresh the meters while someone is typing or choosing.
+      st.sources.forEach(function (s) {
+        var m = meter(s.level), b = document.querySelector('[data-id="' + s.id + '"] .meter b');
+        if (b) { b.style.width = m.w + "%"; b.className = m.cls; }
+      });
+      return;
+    }
+    $("list").innerHTML = st.sources.length ? st.sources.map(function (s) {
+      var p = pills[s.state] || ["", s.state || "starting"], m = meter(s.level);
+      var name = s.name || s.label || kindName[s.kind] || s.kind;
+      var what = [kindName[s.kind] || s.kind];
+      if (s.kind === "system" || s.kind === "input") what.push(s.device || "default output");
+      what.push(s.id);
+      var detail = s.input ? "Audio: " + s.input : s.detail;
+      if (!detail && s.now_playing) detail = "Now playing: " + s.now_playing;
+      var needsCode = !s.adopted && (s.state === "needs-setup" || s.state === "rejected");
+      return '<div class="src" data-id="' + esc(s.id) + '">' +
+        '<div class="top"><span class="name">' + esc(name) + '</span><span class="pill ' + p[0] + '"><i></i>' + esc(p[1]) + '</span><span class="grow"></span>' +
+        '<span class="what">' + esc(what.join(" · ")) + '</span></div>' +
+        '<div class="meter"><b class="' + m.cls + '" style="width:' + m.w + '%"></b></div>' +
+        '<div class="detail' + (s.input || s.state === "error" || s.state === "rejected" ? " bad" : "") + '">' + esc(detail || (s.level && s.level.capturing ? (s.level.signal ? "Sending audio" : "Silent") : "")) + '</div>' +
+        '<div class="acts">' +
+          (s.kind === "system" || s.kind === "input" ? '<select data-dev aria-label="Device">' + devOptions(s.kind, s.device) + '</select>' : '') +
+          (textKind(s.kind) ? '<input data-text value="' + esc(s.device) + '" spellcheck="false" style="flex:1 1 260px"><button class="btn" data-savetext>Save</button>' : '') +
+          (needsCode ? '<input class="code" data-code maxlength="9" placeholder="Adopt code"><button class="btn primary" data-setcode>Connect</button>' : '') +
+          '<button class="btn" data-pause>' + (s.paused ? "Resume" : "Pause") + '</button>' +
+          '<button class="btn quiet danger" data-remove>' + (editing[s.id] === "remove" ? "Click again to remove" : "Remove") + '</button>' +
+        '</div></div>';
+    }).join("") : '<div class="empty">No sources yet. Add one below.</div>';
+  }
+
+  function render() {
+    $("ver").textContent = st.version + " · " + st.os;
+    if (document.activeElement !== $("server")) $("server").value = st.server;
+    if (!$("kind").options.length) {
+      $("kind").innerHTML = st.kinds.map(function (k) { kindName[k.id] = k.label; return '<option value="' + k.id + '">' + esc(k.label) + "</option>"; }).join("");
+      kindChanged();
+    }
+    st.kinds.forEach(function (k) { kindName[k.id] = k.label; });
+    renderList();
+  }
+
+  function textKind(k) { return k === "playlist" || k === "radio"; }
+  function kindChanged() {
+    var k = $("kind").value, info = st.kinds.find(function (x) { return x.id === k; }) || {};
+    $("kindHelp").textContent = info.help || "";
+    $("devWrap").hidden = k === "tone" || textKind(k);
+    $("textWrap").hidden = !textKind(k);
+    $("textLabel").textContent = k === "radio" ? "Stream URL" : "Music folder";
+    $("devText").placeholder = k === "radio" ? "https://stream.example.com/live.mp3" : (st.music_dir || "C:\\Users\\you\\Music");
+    if (k === "playlist" && !$("devText").value) $("devText").value = st.music_dir || "";
+    if (k === "radio" && $("devText").value === st.music_dir) $("devText").value = "";
+    $("devLabel").textContent = k === "system" ? "Output device to capture" : "Input device";
+    if (document.activeElement !== $("device")) $("device").innerHTML = devOptions(k, "");
+  }
+  $("kind").onchange = kindChanged;
+
+  function poll() {
+    api("GET", "/api/state").then(function (s) { st = s; render(); }).catch(function () {});
+  }
+  poll();
+  setInterval(poll, 500);
+
+  $("srvForm").onsubmit = function (e) {
+    e.preventDefault();
+    $("srvErr").textContent = "";
+    api("POST", "/api/server", { server: $("server").value }).then(function () { $("server").blur(); poll(); })
+      .catch(function (err) { $("srvErr").textContent = err.message; });
+  };
+
+  $("addForm").onsubmit = function (e) {
+    e.preventDefault();
+    $("addErr").textContent = "";
+    var k = $("kind").value;
+    api("POST", "/api/sources", { kind: k, device: textKind(k) ? $("devText").value.trim() : $("devWrap").hidden ? "" : $("device").value, label: $("label").value, code: $("code").value })
+      .then(function () { $("label").value = ""; $("code").value = ""; $("devText").value = ""; kindChanged(); poll(); })
+      .catch(function (err) { $("addErr").textContent = err.message; });
+  };
+
+  $("list").addEventListener("change", function (e) {
+    var row = e.target.closest("[data-id]");
+    if (row && e.target.matches("[data-dev]")) api("PATCH", "/api/sources/" + row.dataset.id, { device: e.target.value }).then(function () { e.target.blur(); poll(); });
+  });
+  $("list").addEventListener("click", function (e) {
+    var row = e.target.closest("[data-id]");
+    if (!row) return;
+    var id = row.dataset.id, s = st.sources.find(function (x) { return x.id === id; });
+    if (e.target.closest("[data-pause]")) api("PATCH", "/api/sources/" + id, { paused: !s.paused }).then(poll);
+    else if (e.target.closest("[data-savetext]")) {
+      var v = row.querySelector("[data-text]").value.trim();
+      api("PATCH", "/api/sources/" + id, { device: v }).then(function () { document.activeElement.blur(); poll(); });
+    }
+    else if (e.target.closest("[data-setcode]")) {
+      var code = row.querySelector("[data-code]").value.trim();
+      if (code) api("PATCH", "/api/sources/" + id, { code: code }).then(function () { document.activeElement.blur(); poll(); });
+    } else if (e.target.closest("[data-remove]")) {
+      if (editing[id] !== "remove") {
+        editing[id] = "remove"; renderList();
+        setTimeout(function () { if (editing[id] === "remove") { delete editing[id]; renderList(); } }, 4000);
+        return;
+      }
+      delete editing[id];
+      api("DELETE", "/api/sources/" + id).then(poll);
+    }
+  });
+})();
+</script>
+</body>
+</html>

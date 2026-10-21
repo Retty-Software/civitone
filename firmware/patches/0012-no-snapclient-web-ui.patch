@@ -1,0 +1,15 @@
+diff --color -ruN a3/main/main.c b3/main/main.c
+--- a3/main/main.c	2026-10-21 17:39:30
++++ b3/main/main.c	2026-10-21 17:39:41
+@@ -1537,7 +1537,10 @@
+   esp32_udp_logger_autostart();
+   #endif
+ 
+-  init_http_server_task();
++  // Civitone: snapclient's web UI stays off. It changed the snapserver, the
++  // DSP and the DAC for anyone on the LAN, with no login. The controller sets
++  // the snapserver; the DSP keeps its saved mode; the setup page runs its own
++  // server, only on the setup network (components/civitone_setup).
+ 
+   // Enable websocket server
+   //  ESP_LOGI(TAG, "Setup ws server");

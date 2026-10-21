@@ -1,0 +1,17 @@
+diff --color -ru a/components/lightsnapcast/player.c b/components/lightsnapcast/player.c
+--- a/components/lightsnapcast/player.c	2026-10-13 16:27:57
++++ b/components/lightsnapcast/player.c	2026-10-13 16:27:57
+@@ -1820,7 +1820,12 @@
+ 
+       const int64_t shortOffset = SHORT_OFFSET;  // µs, softsync
+       const int64_t miniOffset = MINI_OFFSET;    // µs, softsync
+-      const int64_t hardResyncThreshold = 2000;  // µs, hard sync
++      // Civitone: 2 ms was tuned for a LAN. Through the internet the clock
++      // offset estimate wobbles by ±5 ms (up to 20 ms), so every ~2 s the
++      // short median crossed 2 ms and the player hard-resynced: audible
++      // chop (Oct 13, 2026, cloud server). APLL speed control handles
++      // anything below this smoothly, so only hard-resync on real jumps.
++      const int64_t hardResyncThreshold = 30000;  // µs, hard sync
+ 
+       if (initialSync == 1) {
+         if (size == 0) {

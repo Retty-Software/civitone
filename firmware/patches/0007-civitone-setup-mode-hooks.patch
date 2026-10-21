@@ -1,0 +1,85 @@
+diff --color -ru a/components/network_interface/wifi_interface.c b/components/network_interface/wifi_interface.c
+--- a/components/network_interface/wifi_interface.c	2026-10-12 21:53:53
++++ b/components/network_interface/wifi_interface.c	2026-10-12 21:53:54
+@@ -66,6 +66,10 @@
+ 
+ static const char *TAG = "WIFI_IF";
+ 
++// Civitone setup mode pauses reconnects while it scans or switches networks
++// (components/civitone_setup). Weak: absent means always reconnect.
++bool civitone_setup_should_reconnect(void) __attribute__((weak));
++
+ static char mac_address[18];
+ 
+ static int s_retry_num = 0;
+@@ -87,7 +91,11 @@
+     esp_wifi_connect();
+   } else if (event_base == WIFI_EVENT &&
+              event_id == WIFI_EVENT_STA_DISCONNECTED) {
+-    if ((s_retry_num < WIFI_MAXIMUM_RETRY) || (WIFI_MAXIMUM_RETRY == 0)) {
++    if (civitone_setup_should_reconnect && !civitone_setup_should_reconnect()) {
++      xSemaphoreTake(connIpSemaphoreHandle, portMAX_DELAY);
++      connected = false;
++      xSemaphoreGive(connIpSemaphoreHandle);
++    } else if ((s_retry_num < WIFI_MAXIMUM_RETRY) || (WIFI_MAXIMUM_RETRY == 0)) {
+       xSemaphoreTake(connIpSemaphoreHandle, portMAX_DELAY);
+       connected = false;
+       xSemaphoreGive(connIpSemaphoreHandle);
+diff --color -ru a/components/ui_http_server/ui_http_server.c b/components/ui_http_server/ui_http_server.c
+--- a/components/ui_http_server/ui_http_server.c	2026-10-12 21:53:53
++++ b/components/ui_http_server/ui_http_server.c	2026-10-12 21:53:54
+@@ -34,6 +34,11 @@
+ static TaskHandle_t taskHandle = NULL;
+ static httpd_handle_t server = NULL;
+ 
++// Civitone: extra routes (setup page, captive-portal probes) registered before
++// the built-in ones so the "/*" static handler can't shadow them. Weak:
++// absent means none.
++void ui_http_server_register_extra(httpd_handle_t h) __attribute__((weak));
++
+ // External references to embedded files
+ extern const uint8_t index_html_start[] asm("_binary_index_html_start");
+ extern const uint8_t index_html_end[] asm("_binary_index_html_end");
+@@ -1004,6 +1009,9 @@
+ 	if (httpd_start(&server, &config) != ESP_OK) {
+ 		ESP_LOGE(TAG, "%s: Failed to start file server!", __func__);
+ 		return ESP_FAIL;
++	}
++	if (ui_http_server_register_extra) {
++		ui_http_server_register_extra(server);
+ 	}
+ 
+ 	/* URI handler for get */
+diff --color -ru a/main/CMakeLists.txt b/main/CMakeLists.txt
+--- a/main/CMakeLists.txt	2026-10-12 21:53:53
++++ b/main/CMakeLists.txt	2026-10-12 21:53:54
+@@ -2,7 +2,7 @@
+                        INCLUDE_DIRS "."
+ 
+                        PRIV_REQUIRES esp_timer esp_wifi nvs_flash audio_board audio_hal audio_sal net_functions opus flac ota_server
+-                       				 ui_http_server network_interface custom_board settings_manager tas5805m_settings udp_logger civitone_ctrl
++                       				 ui_http_server network_interface custom_board settings_manager tas5805m_settings udp_logger civitone_ctrl civitone_setup
+                        )
+ 
+ set_source_files_properties(main.c PROPERTIES COMPILE_FLAGS -Wno-implicit-fallthrough)
+diff --color -ru a/main/main.c b/main/main.c
+--- a/main/main.c	2026-10-12 21:53:53
++++ b/main/main.c	2026-10-12 21:53:54
+@@ -32,6 +32,7 @@
+ #include "net_functions.h"
+ #include "network_interface.h"
+ #include "civitone_ctrl.h"
++#include "civitone_setup.h"
+ #include "nvs_flash.h"
+ 
+ #include "esp32_udp_logger.h"
+@@ -1403,6 +1404,9 @@
+ #endif
+ 
+   network_if_init();
++  // Civitone: saved networks, and the setup network when there's nothing
++  // to connect to (docs/node-setup.md).
++  civitone_setup_start();
+ 
+   board_i2s_pin_t pin_config0;
+   get_i2s_pins(I2S_NUM_0, &pin_config0);

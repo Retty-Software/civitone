@@ -1,0 +1,68 @@
+--- a/components/lightsnapcast/player.c
++++ b/components/lightsnapcast/player.c
+@@ -211,6 +211,15 @@
+ /**
+  *
+  */
++static volatile uint32_t civiUnderruns = 0;
++
++static IRAM_ATTR bool civi_i2s_underrun_cb(i2s_chan_handle_t handle,
++                                           i2s_event_data_t *event,
++                                           void *user_ctx) {
++  civiUnderruns++;
++  return false;
++}
++
+ static esp_err_t player_setup_i2s(snapcastSetting_t *setting) {
+   // ensure save setting
+   int32_t sr = setting->sr;
+@@ -231,7 +240,11 @@
+   }
+ 
+ #if USE_SAMPLE_INSERTION
+-  i2sDmaBufCnt = 2;
++  // Civitone: upstream used 2 buffers (~43 ms at 48 kHz). A player-task stall
++  // longer than that underruns the DMA, which is heard as a ~50 ms gap and
++  // throws the sync estimate off by the length of the stall. 4 buffers gives
++  // ~85 ms of headroom. Sync math reads i2sDmaBufCnt, so nothing else changes.
++  i2sDmaBufCnt = 4;
+   // OPUS has a minimum frame size of 120
+   // with DMA buffer set to this value sync algorithm
+   // works for all decoders. We set it to 100 so
+@@ -307,6 +320,18 @@
+       .auto_clear = true,
+   };
+   ESP_ERROR_CHECK(i2s_new_channel(&tx_chan_cfg, &tx_chan, NULL));
++
++  // Civitone: count DMA underruns (send queue ran dry) so they can be logged
++  // from the player task. Called from ISR context, so only bump a counter.
++  {
++    i2s_event_callbacks_t cbs = {
++        .on_recv = NULL,
++        .on_recv_q_ovf = NULL,
++        .on_sent = NULL,
++        .on_send_q_ovf = civi_i2s_underrun_cb,
++    };
++    ESP_ERROR_CHECK(i2s_channel_register_event_callback(tx_chan, &cbs, NULL));
++  }
+ 
+   ESP_LOGI(TAG,
+            "player_setup_i2s: dma_buf_len is %ld, dma_buf_count is %ld, sample "
+@@ -1998,6 +2023,17 @@
+             // ESP_LOGI(TAG, "%lld", error_us);
+ 
+             age = error_us;
++          }
++
++          {
++            static uint32_t civiUnderrunsLogged = 0;
++            uint32_t u = civiUnderruns;
++            if (u != civiUnderrunsLogged) {
++              ESP_LOGW(TAG, "CIVI I2S underrun x%lu (total %lu), age now %lldus",
++                       (unsigned long)(u - civiUnderrunsLogged),
++                       (unsigned long)u, age);
++              civiUnderrunsLogged = u;
++            }
+           }
+           
+           

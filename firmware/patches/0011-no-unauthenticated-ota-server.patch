@@ -1,0 +1,15 @@
+diff --color -ruN a2/main/main.c b2/main/main.c
+--- a2/main/main.c	2026-10-21 17:22:41
++++ b2/main/main.c	2026-10-21 17:22:56
+@@ -1553,8 +1553,9 @@
+   dsp_settings_init();   // Then settings can restore params into the processor
+ #endif
+ 
+-  xTaskCreatePinnedToCore(&ota_server_task, "ota", 14 * 256, NULL,
+-                          OTA_TASK_PRIORITY, &t_ota_task, OTA_TASK_CORE_ID);
++  // Civitone: no ota_server. It took a firmware image from anyone on the LAN
++  // (TCP 8032, no auth). Updates come through the control channel instead
++  // (civitone_ctrl, update_firmware), which also marks a new image good.
+ 
+   xTaskCreatePinnedToCore(&http_get_task, "http", 15 * 1024, NULL,
+                           HTTP_TASK_PRIORITY, &t_http_get_task,

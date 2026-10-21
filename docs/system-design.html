@@ -1,0 +1,409 @@
+<title>Civitone System Design</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+  /* Layout: single reading column (68ch) with full-width breakouts for diagrams and tables; left-rail section numbers mark a real sequence (boot → adopt → stream). */
+  :root {
+    --bg: #f5f4f0;
+    --surface: #ffffff;
+    --surface-2: #ecebe5;
+    --line: #d6d4cb;
+    --line-strong: #b7b4a7;
+    --ink: #1c1f24;
+    --muted: #5b6069;
+    --faint: #8a8f98;
+    --accent: #9a6a1c;        /* brass */
+    --accent-ink: #7a5214;
+    --accent-tint: #f3ead8;
+    --cool: #2d5f7a;          /* slate blue, used for network-side items */
+    --cool-tint: #e2edf3;
+    --good: #2f7d4f;
+    --warn: #b7791f;
+    --bad: #b3402e;
+    --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --body: "Public Sans", "Segoe UI", Roboto, Helvetica, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15171b; --surface: #1d2025; --surface-2: #24282e; --line: #30353d; --line-strong: #454b55;
+      --ink: #e9e7e0; --muted: #a2a6ae; --faint: #6f747d;
+      --accent: #d9a74a; --accent-ink: #e6bb68; --accent-tint: #2e2718;
+      --cool: #7fb3d1; --cool-tint: #1b2a34;
+      --good: #5fbf85; --warn: #e0a24a; --bad: #e0705b;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15171b; --surface: #1d2025; --surface-2: #24282e; --line: #30353d; --line-strong: #454b55;
+    --ink: #e9e7e0; --muted: #a2a6ae; --faint: #6f747d;
+    --accent: #d9a74a; --accent-ink: #e6bb68; --accent-tint: #2e2718;
+    --cool: #7fb3d1; --cool-tint: #1b2a34;
+    --good: #5fbf85; --warn: #e0a24a; --bad: #e0705b;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 880px; margin: 0 auto; padding-block: 44px 96px; padding-inline: 20px; }
+
+  .eyebrow { font: 600 11px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--accent-ink); margin: 0 0 14px; }
+  h1 { font-family: var(--display); font-weight: 700; font-size: clamp(34px, 6vw, 56px); line-height: .98; letter-spacing: -.025em; margin: 0 0 14px; text-wrap: balance; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 62ch; margin: 0 0 28px; text-wrap: pretty; }
+
+  .reqs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 0 0 56px; }
+  @media (max-width: 680px) { .reqs { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 440px) { .reqs { grid-template-columns: 1fr; } }
+  .req { background: var(--surface); padding: 14px 16px; min-width: 0; }
+  .req .n { font: 600 11px/1 var(--mono); color: var(--faint); margin-bottom: 8px; }
+  .req .t { font-family: var(--display); font-weight: 600; font-size: 15px; line-height: 1.25; margin-bottom: 6px; }
+  .req .h { font-size: 13px; color: var(--muted); line-height: 1.45; }
+  .req .h b { color: var(--accent-ink); font-weight: 600; }
+
+  section { margin-top: 56px; display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 0 18px; }
+  section > .num { font: 600 13px/1 var(--mono); color: var(--accent-ink); padding-top: 10px; border-top: 2px solid var(--accent); }
+  section > .body { min-width: 0; border-top: 1px solid var(--line); padding-top: 10px; }
+  @media (max-width: 560px) { section { grid-template-columns: 1fr; } section > .num { border-top: 0; padding-top: 0; } section > .body { border-top: 2px solid var(--accent); } }
+  h2 { font-family: var(--display); font-weight: 600; font-size: 27px; letter-spacing: -.015em; line-height: 1.12; margin: 0 0 6px; text-wrap: balance; }
+  h3 { font-family: var(--display); font-weight: 600; font-size: 17px; margin: 28px 0 8px; }
+  .body > p, .body > ul, .body > ol { max-width: 68ch; }
+  p { margin: 0 0 14px; text-wrap: pretty; }
+  ul, ol { margin: 0 0 14px; padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  li::marker { color: var(--faint); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: .86em; background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+  .sub { color: var(--muted); margin-bottom: 18px; }
+
+  .note { display: flex; gap: 12px; background: var(--accent-tint); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; padding: 12px 16px; margin: 18px 0; font-size: 14.5px; }
+  .note.cool { background: var(--cool-tint); border-left-color: var(--cool); }
+  .note .k { font: 600 10.5px/1.6 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent-ink); flex: none; padding-top: 2px; }
+  .note.cool .k { color: var(--cool); }
+  .note div:last-child { min-width: 0; }
+
+  .diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 16px 0 20px; overflow-x: auto; }
+  .diagram .cap { font: 500 12px/1.4 var(--mono); color: var(--faint); margin: 0 0 8px; }
+  pre.mermaid { margin: 0; background: transparent; }
+
+  .tbl { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 16px 0 20px; background: var(--surface); }
+  .tbl .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th { font: 600 10.5px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); background: var(--surface-2); }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.k { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+  td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+  th.n { text-align: right; }
+  .pill { display: inline-block; font: 600 11px/1 var(--mono); padding: 4px 8px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--muted); white-space: nowrap; }
+  .pill.good { color: var(--good); border-color: color-mix(in srgb, var(--good) 50%, var(--line)); }
+  .pill.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); }
+  .pill.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 50%, var(--line)); }
+
+  .states { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 14px 0 20px; }
+  @media (max-width: 720px) { .states { grid-template-columns: repeat(2, 1fr); } }
+  .st { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-width: 0; border-top: 3px solid var(--c); }
+  .st .l { font: 600 12px/1.3 var(--mono); color: var(--c); margin-bottom: 4px; }
+  .st .d { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+
+  .budget { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0 6px; }
+  @media (max-width: 640px) { .budget { grid-template-columns: 1fr; } }
+  .prof { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+  .prof h4 { font-family: var(--display); font-size: 15px; margin: 0 0 2px; display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .prof h4 span { font: 600 13px var(--mono); color: var(--accent-ink); }
+  .prof .use { font-size: 13px; color: var(--muted); margin: 0 0 10px; }
+  .bar { display: flex; height: 22px; border-radius: 5px; overflow: hidden; border: 1px solid var(--line); }
+  .bar div { font: 500 10.5px/22px var(--mono); color: var(--ink); text-align: center; overflow: hidden; white-space: nowrap; }
+  .b1 { background: var(--cool-tint); } .b2 { background: var(--surface-2); } .b3 { background: var(--accent-tint); }
+  .bk { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .bk i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 5px; border: 1px solid var(--line); }
+
+  footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 13px; color: var(--faint); }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Civitone &middot; System design &middot; Rev A &middot; October 5, 2026</p>
+  <h1>Civitone System Design</h1>
+  <p class="lede">A district audio system for a downtown. Six speaker nodes on poles, one controller, one web console. Nodes are adopted once and then work from any network, and a live announcement reaches every zone within a quarter second.</p>
+
+  <div class="reqs">
+    <div class="req"><div class="n">R1</div><div class="t">Every node reports status</div><div class="h">Heartbeat every 5 s over the control channel. <b>Section 5</b></div></div>
+    <div class="req"><div class="n">R2</div><div class="t">Nodes are adopted into the system</div><div class="h">Claim code at first boot, then a device identity that never changes. <b>Section 3</b></div></div>
+    <div class="req"><div class="n">R3</div><div class="t">Works on any WiFi, even locked down</div><div class="h">Nodes only ever dial out to the controller. No inbound ports, no peer traffic. <b>Section 4</b></div></div>
+    <div class="req"><div class="n">R4</div><div class="t">Very little latency</div><div class="h">Controller is on site with the sources; parade profile targets 200 ms. <b>Section 6</b></div></div>
+    <div class="req"><div class="n">R5</div><div class="t">Easy source routing</div><div class="h">Pick zones, tap a source. Linked zones stay sample-locked. <b>Section 7</b></div></div>
+    <div class="req"><div class="n">R6</div><div class="t">Web app for management</div><div class="h">Served by the controller, works on a phone at the parade. <b>Section 8</b></div></div>
+  </div>
+
+  <!-- 1 -->
+  <section>
+    <div class="num">01</div>
+    <div class="body">
+      <h2>The three parts</h2>
+      <p class="sub">Everything in Civitone is one of these. Nothing else needs to exist for the system to run an event.</p>
+      <div class="tbl"><div class="scroll"><table>
+        <thead><tr><th>Part</th><th>What it is</th><th>Runs on</th><th>Count</th></tr></thead>
+        <tbody>
+          <tr><td class="k">node</td><td>A pole unit. Plays one stream into two speakers, reports status, accepts commands.</td><td>Amped-ESP32-Plus (classic ESP32, external antenna) in an IP65 box, 24 V supply</td><td class="n">6 + 2 spare</td></tr>
+          <tr><td class="k">controller</td><td>The hub. Takes in audio sources, runs the sync server, holds the node registry, serves the console.</td><td>Raspberry Pi 4 or a laptop, on site at the event, on its own travel router or city WiFi</td><td class="n">1</td></tr>
+          <tr><td class="k">console</td><td>The web app. Status, adoption, routing, volume, latency profile.</td><td>Any browser pointed at the controller</td><td class="n">any</td></tr>
+        </tbody>
+      </table></div></div>
+      <div class="diagram">
+        <p class="cap">Figure 1 &middot; Every arrow starts at a node. The controller never has to reach a node.</p>
+        <pre class="mermaid">
+flowchart LR
+  subgraph poles[" Poles "]
+    n1["Node 1<br/>Main St"]
+    n2["Node 2<br/>Courthouse Sq"]
+    n6["Node 6<br/>Market Row"]
+  end
+  subgraph ctl[" Controller (on site) "]
+    reg["Registry + control<br/>WebSocket :443"]
+    snap["Sync server<br/>Snapcast :1704"]
+    web["Console<br/>HTTPS :443"]
+  end
+  src["Sources<br/>mic &middot; music &middot; announcements"] --> snap
+  n1 -- "control" --> reg
+  n2 -- "control" --> reg
+  n6 -- "control" --> reg
+  n1 -- "audio" --> snap
+  n2 -- "audio" --> snap
+  n6 -- "audio" --> snap
+  op["Operator phone"] --> web
+        </pre>
+      </div>
+      <p>A node holds two outbound connections to the controller: a <strong>control channel</strong> (WebSocket, TLS, authenticated by device token) for status and commands, and an <strong>audio channel</strong> (Snapcast client protocol, TCP) for the stream. Both reconnect on their own. That is the whole protocol surface of a node.</p>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section>
+    <div class="num">02</div>
+    <div class="body">
+      <h2>Inside a node</h2>
+      <p class="sub">Firmware is a fork of the esparagus Snapcast client, so the audio path is already proven on this board. Civitone adds adoption, the control channel, and a persistent identity.</p>
+      <div class="diagram">
+        <p class="cap">Figure 2 &middot; Signal and control inside one pole unit.</p>
+        <pre class="mermaid">
+flowchart LR
+  wifi["WiFi<br/>external antenna"] --> ctrl["Control task<br/>heartbeat, commands,<br/>adoption state"]
+  wifi --> snapc["Snapclient task<br/>PCM/FLAC decode,<br/>clock sync"]
+  ctrl -. "volume, mute,<br/>reboot, profile" .-> snapc
+  snapc --> buf["Ring buffer<br/>in 8 MB PSRAM"]
+  buf --> i2s["I2S"] --> dac["PCM5122 DAC<br/>digital volume"] --> amp["TPA3118 amp<br/>2 x 25 W @ 8 Ω"] --> spk["2 x Rockville HP5S-8"]
+  nvs[("NVS flash<br/>device id, token,<br/>controller URL, WiFi")] --- ctrl
+        </pre>
+      </div>
+      <p>What lives in flash and survives reboots, power loss, and moving to a new network:</p>
+      <ul>
+        <li><code>device_id</code>: generated once at first boot, never changes. Shown on a label inside the enclosure.</li>
+        <li><code>device_token</code>: issued by the controller at adoption. Authenticates the control channel.</li>
+        <li><code>controller_url</code>: where to dial. Can be a hostname so the controller can move.</li>
+        <li>Up to four saved WiFi networks, tried in order.</li>
+        <li>Zone name, last known volume, last latency profile, so a node that reboots mid-event comes back the way it left.</li>
+      </ul>
+      <div class="note"><span class="k">Why</span><div>Volume is controlled at the DAC, not the amp. The amp pot is set once at install as a ceiling. This is the fix for the gain problem from the bench build: full-scale digital no longer slams the amp because the DAC never has to be at full scale.</div></div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <div class="num">03</div>
+    <div class="body">
+      <h2>Adoption</h2>
+      <p class="sub">Modeled on how network gear is adopted by a controller. A node is a stranger until someone with console access claims it. After that it is trusted anywhere.</p>
+      <div class="states">
+        <div class="st" style="--c:var(--faint)"><div class="l">FACTORY</div><div class="d">No WiFi, no identity. Broadcasts a setup network <code>civitone-XXXX</code>.</div></div>
+        <div class="st" style="--c:var(--cool)"><div class="l">PROVISIONED</div><div class="d">Has WiFi and the controller URL. Dials the controller with its claim code.</div></div>
+        <div class="st" style="--c:var(--warn)"><div class="l">PENDING</div><div class="d">Seen by the controller, listed in the console as "waiting for adoption". Can't play audio.</div></div>
+        <div class="st" style="--c:var(--good)"><div class="l">ADOPTED</div><div class="d">Holds a device token. Named, assigned to a zone, fully controllable.</div></div>
+        <div class="st" style="--c:var(--bad)"><div class="l">FORGOTTEN</div><div class="d">Token revoked from the console. Node returns to Provisioned and must be re-adopted.</div></div>
+      </div>
+      <div class="diagram">
+        <p class="cap">Figure 3 &middot; First boot to adopted. Steps 1 to 3 happen once, on the bench.</p>
+        <pre class="mermaid">
+sequenceDiagram
+  participant P as Phone
+  participant N as Node
+  participant C as Controller
+  participant O as Console
+  P->>N: 1. Join setup network civitone-7F2A
+  P->>N: 2. Enter WiFi + controller URL (captive page)
+  N->>N: 3. Save, reboot, join WiFi
+  N->>C: 4. HELLO {device_id, claim_code, fw, hw}
+  C-->>N: 5. PENDING (retry in 10 s)
+  C->>O: 6. New node waiting: 7F2A, claim 48-11-20
+  O->>C: 7. Adopt 7F2A as "Riverwalk", zone 3
+  C-->>N: 8. ADOPTED {device_token, zone, snapcast host}
+  N->>N: 9. Store token, open audio channel
+  N->>C: 10. heartbeat every 5 s
+        </pre>
+      </div>
+      <h3>What the operator sees</h3>
+      <p>A card appears at the top of the console: "Node 7F2A is waiting. Claim code 48-11-20." The claim code is printed on the node's label, so adopting the right one is a matter of reading the label and matching the code, then giving the node a name and a zone. The whole step takes about ten seconds and is the only time anyone has to think about a specific board.</p>
+      <h3>Setup network details</h3>
+      <ul>
+        <li>The node brings up the setup network only when it has no saved WiFi, or when the button inside the enclosure is held for 5 s. Otherwise it never advertises anything.</li>
+        <li>The captive page accepts several WiFi networks at once, so a node can be given the shop network and the city network on the same bench visit.</li>
+        <li>Improv WiFi over serial is also accepted, so a batch of nodes can be provisioned from a laptop script without touching a phone.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <div class="num">04</div>
+    <div class="body">
+      <h2>Any network, even locked down</h2>
+      <p class="sub">Requirement 3 is met by a rule, not a feature: a node never needs to be reached and never needs to see another node.</p>
+      <p>Locked-down WiFi usually means some mix of client isolation (devices can't see each other), no inbound connections, NAT, and a captive portal. The first three don't matter to Civitone because every connection is outbound from the node to the controller, on ports that any network already allows (443 for control, and the audio channel can share 443 or use its own port). Nodes on different networks, or on the same network with isolation turned on, behave identically.</p>
+      <div class="tbl"><div class="scroll"><table>
+        <thead><tr><th>Network condition</th><th>Effect on Civitone</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>Client isolation on</td><td>None. Nodes never talk to each other.</td><td><span class="pill good">fine</span></td></tr>
+          <tr><td>No inbound connections / NAT</td><td>None. Controller never dials a node.</td><td><span class="pill good">fine</span></td></tr>
+          <tr><td>Only ports 80/443 allowed</td><td>None if the audio channel is served on 443 alongside control.</td><td><span class="pill good">fine</span></td></tr>
+          <tr><td>Captive portal (click to accept)</td><td>Node can't click. City IT allowlists node MAC addresses, which the proposal already asks for.</td><td><span class="pill warn">needs allowlist</span></td></tr>
+          <tr><td>Controller not on the same network</td><td>Works if the controller is reachable by hostname. Adds latency equal to the path between networks.</td><td><span class="pill warn">check latency</span></td></tr>
+          <tr><td>No WiFi at all at a pole</td><td>Node stays offline and says so. Fallback is a travel router on the operator's cart.</td><td><span class="pill bad">plan around it</span></td></tr>
+        </tbody>
+      </table></div></div>
+      <div class="note cool"><span class="k">Overlay</span><div>WireGuard is not needed for this. The control channel is TLS and the device token is the identity, so the overlay from the original plan goes away. If the city later insists on a VPN, the controller can sit behind one and nodes still only know a hostname.</div></div>
+      <h3>Where the controller lives</h3>
+      <p>At an event, the controller is on site: a Pi 4 in a case on the operator's table, with its own travel router. Nodes reach it either through the city WiFi (if it routes to the travel router's address) or by joining the travel router's network directly. Having the controller local is also what makes requirement 4 possible. Between events the controller can be off, or on a shelf at the shop so nodes can be tested remotely.</p>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section>
+    <div class="num">05</div>
+    <div class="body">
+      <h2>Status</h2>
+      <p class="sub">Every adopted node sends a heartbeat every 5 seconds. The controller marks a node degraded after 2 missed beats and offline after 6 (30 s).</p>
+      <div class="tbl"><div class="scroll"><table>
+        <thead><tr><th>Field</th><th>Meaning</th><th>Shown as</th></tr></thead>
+        <tbody>
+          <tr><td class="k">state</td><td>playing, idle, muted, pending, updating</td><td>Pill on the node card</td></tr>
+          <tr><td class="k">rssi</td><td>WiFi signal in dBm</td><td>Bars; warns below −75</td></tr>
+          <tr><td class="k">buffer_ms</td><td>Audio buffered ahead of playout</td><td>Meter; warns under 40% of profile</td></tr>
+          <tr><td class="k">sync_err_us</td><td>Clock offset from the sync server</td><td>Number; warns over 2 ms</td></tr>
+          <tr><td class="k">dropouts_1m</td><td>Buffer underruns in the last minute</td><td>Count; warns over 0</td></tr>
+          <tr><td class="k">volume</td><td>DAC digital volume 0–100</td><td>Slider</td></tr>
+          <tr><td class="k">temp_c</td><td>ESP32 die temperature (proxy for enclosure heat)</td><td>Warns over 70 °C</td></tr>
+          <tr><td class="k">vin</td><td>Supply voltage at the board</td><td>Warns under 20 V on a 24 V node</td></tr>
+          <tr><td class="k">stream</td><td>Which source this node is playing</td><td>Colored label</td></tr>
+          <tr><td class="k">fw, uptime, ip, ssid</td><td>Housekeeping</td><td>Node detail page</td></tr>
+        </tbody>
+      </table></div></div>
+      <p>Status is also pushed the other way. The console holds one WebSocket to the controller and gets every heartbeat as it arrives, so a node going quiet shows up within seconds without reloading the page.</p>
+      <h3>Commands a node accepts</h3>
+      <p><code>set_volume</code>, <code>mute</code>, <code>set_stream</code>, <code>set_profile</code>, <code>identify</code> (plays a short tone so you know which pole you're looking at), <code>reboot</code>, <code>update_firmware</code> (over the air, from the controller), <code>forget</code>.</p>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section>
+    <div class="num">06</div>
+    <div class="body">
+      <h2>Latency</h2>
+      <p class="sub">In a synced system, latency is the buffer. Nodes play audio exactly one buffer length after the controller received it. The buffer is what keeps six poles in step over imperfect WiFi, so the trade is between tightness and tolerance.</p>
+      <div class="budget">
+        <div class="prof">
+          <h4>Parade <span>200 ms</span></h4>
+          <p class="use">Live announcer mic. Short enough that the voice on the speakers doesn't fight the voice in the air.</p>
+          <div class="bar"><div class="b1" style="width:12%">24</div><div class="b2" style="width:8%">16</div><div class="b3" style="width:80%">160 ms buffer</div></div>
+        </div>
+        <div class="prof">
+          <h4>Festival <span>800 ms</span></h4>
+          <p class="use">Music all day. Nobody can hear the delay, and the fat buffer rides out WiFi hiccups.</p>
+          <div class="bar"><div class="b1" style="width:3%"></div><div class="b2" style="width:2%"></div><div class="b3" style="width:95%">776 ms buffer</div></div>
+        </div>
+      </div>
+      <div class="bk"><span><i class="b1"></i>capture + encode at controller</span><span><i class="b2"></i>WiFi one way</span><span><i class="b3"></i>node buffer (the sync margin)</span></div>
+      <h3>How 200 ms is reached</h3>
+      <ul>
+        <li><strong>Controller on site.</strong> The mic plugs into the controller. No internet hop.</li>
+        <li><strong>PCM, not a lossy codec.</strong> 48 kHz 16-bit stereo is about 1.5 Mbps per node, well inside what the city WiFi gave the Pi tests. No encoder delay.</li>
+        <li><strong>Small chunks.</strong> 10 ms frames from the server instead of the default 20 ms.</li>
+        <li><strong>Clean radio.</strong> The external antenna, and a travel router for parade day if the city network is busy.</li>
+        <li><strong>PSRAM.</strong> The 8 MB on the Amped board holds the buffer comfortably at either profile.</li>
+      </ul>
+      <div class="note"><span class="k">Target</span><div>200 ms is the design target for the parade profile and 150 ms is the stretch. Below about 120 ms, ESP32 Snapcast clients start dropping on real WiFi. The first thing to measure on the bench is the lowest buffer two nodes can hold for ten minutes with zero dropouts; that number sets the parade profile.</div></div>
+      <p>Switching profiles is one button in the console. It is applied to every node at once, and the stream re-syncs in about a second.</p>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section>
+    <div class="num">07</div>
+    <div class="body">
+      <h2>Sources and routing</h2>
+      <p class="sub">A source is anything the controller can turn into a stream. Routing is assigning zones to streams. Zones on the same stream are one synced group.</p>
+      <div class="tbl"><div class="scroll"><table>
+        <thead><tr><th>Source</th><th>How it enters the controller</th><th>Typical use</th></tr></thead>
+        <tbody>
+          <tr><td>Live mic</td><td>USB audio interface, XLR in</td><td>Parade announcer, emergency message</td></tr>
+          <tr><td>Music</td><td>Line in from a laptop or phone; or a playlist on the controller</td><td>Festival background</td></tr>
+          <tr><td>Announcements</td><td>Pre-recorded files, played from the console with one tap</td><td>"Parade starts in 10 minutes", weather, lost child</td></tr>
+          <tr><td>Phone (Bluetooth)</td><td>Controller pairs as a speaker</td><td>Quick music from whoever is nearby</td></tr>
+          <tr><td>Network stream</td><td>URL</td><td>Town radio, remote feed</td></tr>
+        </tbody>
+      </table></div></div>
+      <h3>Routing in the console</h3>
+      <ol>
+        <li>Tap one or more zone cards to select them.</li>
+        <li>Tap a source. The selected zones switch to it together.</li>
+        <li>Zones sharing a source show a Linked badge. They are sample-locked, not just "playing the same thing".</li>
+      </ol>
+      <p><strong>Announcement override</strong> is a special case: tapping an announcement plays it to the chosen zones at a set volume, ducks whatever was playing, and returns to the previous source when done. The mic has a <strong>push-to-talk</strong> version of the same: hold, speak, release, music comes back.</p>
+      <p>Presets save a full routing table ("Parade", "Festival day", "Everything off") and restore it in one tap.</p>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section>
+    <div class="num">08</div>
+    <div class="body">
+      <h2>Console</h2>
+      <p class="sub">Served by the controller at <code>https://civitone.local</code>, or at whatever hostname the controller has. Built for a phone in one hand at the curb; the desktop view is the same screens with more room.</p>
+      <ul>
+        <li><strong>Overview.</strong> Status of every node at a glance, pending adoptions at the top, the latency profile, a master mute that cannot be missed.</li>
+        <li><strong>Routing.</strong> Zone cards, source palette, presets, push-to-talk.</li>
+        <li><strong>Node detail.</strong> Every heartbeat field, event log for that node, identify, reboot, forget, firmware update.</li>
+        <li><strong>Sources.</strong> Level meters per input, announcement library, Bluetooth pairing.</li>
+        <li><strong>Settings.</strong> Operator accounts, controller hostname, firmware images, backup of the registry.</li>
+      </ul>
+      <p>A mockup of the console is published alongside this document as <strong>Civitone Console</strong>.</p>
+      <h3>Software stack</h3>
+      <div class="tbl"><div class="scroll"><table>
+        <thead><tr><th>Layer</th><th>Choice</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Node firmware</td><td>ESP-IDF, forked from esparagus-snapclient</td><td>Audio path and board support already exist. Civitone adds the control task and adoption.</td></tr>
+          <tr><td>Sync server</td><td>Snapcast server</td><td>Proven sample-locked multiroom. Controller drives it through its JSON-RPC API.</td></tr>
+          <tr><td>Controller service</td><td>Go, single binary</td><td>Registry, control WebSocket, Snapcast control, console host. One file to copy to a Pi.</td></tr>
+          <tr><td>Registry</td><td>SQLite</td><td>Six nodes and a few presets do not need more. Backup is copying one file.</td></tr>
+          <tr><td>Console</td><td>Static web app bundled into the binary</td><td>No build step on the Pi, works offline at the event.</td></tr>
+        </tbody>
+      </table></div></div>
+    </div>
+  </section>
+
+  <!-- 9 -->
+  <section>
+    <div class="num">09</div>
+    <div class="body">
+      <h2>Build order</h2>
+      <p class="sub">Each milestone is something that can be shown working on the bench, and each one keeps the previous ones working.</p>
+      <ol>
+        <li><strong>Stock firmware baseline.</strong> Flash esparagus-snapclient on two Amped boards. Measure the lowest stable buffer. This sets the parade profile and validates the board before any custom code.</li>
+        <li><strong>Controller skeleton.</strong> Go service that wraps Snapcast, exposes the control WebSocket, serves a console that lists connected snapclients. No adoption yet.</li>
+        <li><strong>Control task in firmware.</strong> Heartbeat and commands over WebSocket. Console shows live status and can change volume.</li>
+        <li><strong>Adoption.</strong> Factory state, setup network, claim codes, tokens, forget. Node moves between the shop WiFi and a phone hotspot without being touched.</li>
+        <li><strong>Routing and presets.</strong> Source palette, linked groups, announcements, push-to-talk.</li>
+        <li><strong>Field pilot.</strong> One node on one pole at the next festival, controller on the operator's table.</li>
+        <li><strong>OTA updates and operator accounts.</strong> Needed before six nodes go up poles, not before.</li>
+      </ol>
+    </div>
+  </section>
+
+</div>

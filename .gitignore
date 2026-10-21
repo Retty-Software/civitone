@@ -1,0 +1,15 @@
+dist/
+*.exe
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+/controller/civitone
+.DS_Store
+.vscode/
+.pio/
+firmware/build/
+firmware/sdkconfig.old
+
+# Full flash dumps include NVS (WiFi credentials). Keep local.
+firmware/backups/

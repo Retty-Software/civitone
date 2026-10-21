@@ -1,0 +1,25 @@
+diff --color -ru a/main/connection_handler.c b/main/connection_handler.c
+--- a/main/connection_handler.c	2026-10-12 22:18:36
++++ b/main/connection_handler.c	2026-10-12 22:18:36
+@@ -160,10 +160,18 @@
+         continue;
+       }
+ 
++      // Civitone: adoption hands nodes a hostname (the hosted server), so
++      // resolve names, not just numeric addresses. Back off on failure
++      // instead of spinning.
+       if (ipaddr_aton(static_host, &remote_ip) == 0) {
+-        ESP_LOGE(TAG, "can't convert static server address to numeric: %s",
+-                 static_host);
+-        continue;
++        err_t derr = netconn_gethostbyname(static_host, &remote_ip);
++        if (derr != ERR_OK) {
++          ESP_LOGE(TAG, "can't resolve snapserver host %s (err %d)",
++                   static_host, derr);
++          vTaskDelay(pdMS_TO_TICKS(2000));
++          continue;
++        }
++        ESP_LOGI(TAG, "resolved %s to %s", static_host, ipaddr_ntoa(&remote_ip));
+       }
+ 
+       remotePort = (uint16_t)static_port;

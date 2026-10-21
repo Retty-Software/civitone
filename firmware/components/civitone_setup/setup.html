@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Civitone setup</title>
+<!-- Served by the node on its own setup network: no internet, so no fonts or files from anywhere else. -->
+<style>
+:root{--bg:#0d0f12;--s1:#15181d;--s2:#1b1f25;--line:#232830;--line2:#2c323b;--ink:#e8e6e1;--ink2:#b9bec5;--muted:#9aa0a8;--accent:#f2b134;--good:#4cc38a;--bad:#e5483a;--badink:#ff8a75;--mono:ui-monospace,Menlo,Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:440px;min-height:100vh;margin:0 auto;padding:22px 20px 28px;display:flex;flex-direction:column}
+[hidden]{display:none!important}
+.scr{flex:1 1 auto;display:flex;flex-direction:column;gap:18px}
+.top{display:flex;align-items:center;gap:10px}
+.mark{width:28px;height:28px;border-radius:7px;background:var(--accent);display:grid;place-items:center}
+.brand{font-weight:700;font-size:17px}
+.sp{flex:1 1 0}
+.chip{font:600 12px var(--mono);color:var(--ink2);padding:5px 9px;border-radius:999px;border:1px solid var(--line2)}
+.back{width:36px;height:36px;border-radius:9px;border:1px solid var(--line2);background:none;color:#c7ccd2;display:grid;place-items:center;padding:0;cursor:pointer}
+.bar{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.bar i{height:4px;border-radius:2px;background:#262b33}
+.bar i.ok{background:var(--good)}.bar i.on{background:var(--accent)}.bar i.bad{background:var(--bad)}
+.bar i.pulse{background:var(--accent);animation:pulse 1.6s ease-in-out infinite}
+.lab{font:600 11px var(--mono);letter-spacing:.12em;color:var(--muted);text-transform:uppercase}
+h1{margin:0;font-size:26px;line-height:1.2;font-weight:700}
+h1.big{font-size:30px}
+p{margin:0}
+.sub{font-size:15px;color:var(--ink2)}
+.hint{font-size:13px;color:var(--muted);line-height:1.45}
+.card{background:var(--s1);border:1px solid var(--line);border-radius:14px}
+.pad{padding:16px}
+.btn{height:54px;border-radius:14px;border:0;background:var(--accent);color:#0d0f12;font:700 17px system-ui,sans-serif;width:100%;cursor:pointer}
+.btn[disabled]{opacity:.55}
+.link{border:0;background:none;color:var(--accent);font:600 14px system-ui,sans-serif;padding:0;cursor:pointer;text-align:left}
+.end{margin-top:auto;display:flex;flex-direction:column;gap:12px}
+.field{display:flex;align-items:center;height:50px;border-radius:12px;border:1px solid var(--line2);background:var(--s1);padding:0 6px 0 14px}
+.field:focus-within{border-color:var(--accent)}
+.field input{flex:1 1 0;min-width:0;border:0;background:transparent;color:var(--ink);font:500 17px system-ui,sans-serif;outline:none}
+label.f{display:flex;flex-direction:column;gap:8px;font-size:14px;font-weight:600}
+.ready{display:flex;gap:12px;align-items:flex-start;font-size:15px}
+.num{width:26px;height:26px;flex:none;border-radius:7px;background:var(--s2);display:grid;place-items:center;font:700 12px var(--mono);color:#f2c55e}
+.nets{list-style:none;margin:0;padding:0;max-height:330px;overflow:auto}
+.nets li{display:flex;align-items:center;gap:12px;padding:12px 14px;border-top:1px solid #1f242b;cursor:pointer}
+.nets li[aria-selected=true]{background:#2a2210;box-shadow:inset 3px 0 0 var(--accent)}
+.nets .n{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:2px}
+.nets .n b{font-weight:600;overflow-wrap:anywhere}
+.nets .n small{font-size:12.5px;color:var(--muted)}
+.sig{display:flex;align-items:flex-end;gap:2px;height:16px}
+.sig i{width:4px;border-radius:1px;background:#3a414b}
+.sig i.on{background:var(--ink)}
+.head{display:flex;align-items:center;padding:12px 14px}
+.summary{display:flex;align-items:center;gap:10px;padding:10px 12px;font-size:14px}
+.code{position:relative;display:flex;align-items:center;gap:6px}
+.code span{flex:1 1 0;height:58px;border-radius:12px;display:grid;place-items:center;font:700 26px var(--mono);background:var(--s1);border:1px solid #3a414b;color:var(--accent)}
+.code span.cur{border:2px solid var(--accent);color:var(--ink)}
+.code em{width:14px;text-align:center;color:#6f767f;font:700 22px var(--mono)}
+.code input{position:absolute;inset:0;width:100%;opacity:0;font-size:16px;border:0}
+.steps{padding:6px 16px}
+.steps li{display:flex;gap:14px;align-items:flex-start;padding:14px 0;list-style:none}
+.steps li+li{border-top:1px solid var(--line)}
+.steps ul{margin:0;padding:0}
+.dot{width:24px;height:24px;flex:none;border-radius:50%;border:2px solid #3a414b;display:grid;place-items:center;margin-top:1px}
+.ok .dot{background:var(--good);border-color:var(--good)}
+.wait .dot{border:3px solid var(--accent);border-top-color:transparent;animation:spin 1s linear infinite}
+.bad .dot{background:var(--bad);border-color:var(--bad)}
+.dot svg{display:none}.ok .dot svg{display:block}
+.steps b{display:block;font-weight:600}
+.steps small{display:block;font-size:13.5px;color:var(--muted)}
+.todo b{color:#7c838c}
+.note{display:flex;gap:12px;align-items:flex-start;padding:14px;border-radius:12px;background:#12161d;border:1px solid #23324a;font-size:14px;color:#c9d8ee}
+.warnbox{background:#1c1a12;border:1px solid #5a4a1c;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.badbox{background:#1a1314;border:1px solid #4a2520;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.badbox b{color:#ffb3a7}
+.badbox .hint{color:#c7a39d}
+.kv{display:grid;grid-template-columns:90px 1fr;gap:8px 12px;font-size:14px;text-align:left}
+.kv span:nth-child(odd){color:var(--muted)}
+.center{flex:1 1 auto;display:flex;flex-direction:column;justify-content:center;gap:20px}
+.done{align-items:center;text-align:center}
+.tick{width:104px;height:104px;border-radius:50%;background:#12261c;border:2px solid var(--good);display:grid;place-items:center}
+.meter{height:6px;border-radius:3px;background:#1f242b;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--good);transition:width 1s linear}
+.saved li{display:flex;align-items:center;gap:12px;padding:13px 14px;border-top:1px solid #1f242b;list-style:none}
+.saved ul{margin:0;padding:0}
+.sbtn{height:34px;padding:0 12px;border-radius:8px;border:1px solid var(--line2);background:var(--s2);color:var(--ink);font:600 13px system-ui,sans-serif;cursor:pointer}
+.sbtn.p{border:0;background:var(--accent);color:#0d0f12;font-weight:700}
+.err{color:var(--badink);font-weight:600;font-size:14px;min-height:1em}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="back" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="tick" viewBox="0 0 24 24"><path d="M5 12.5 10 17l9-10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></g></symbol>
+  </svg>
+
+  <!-- 1 · Welcome -->
+  <section class="scr" id="welcome" hidden>
+    <div class="top"><span class="mark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0d0f12" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 10v4M8 6v12M12 9v6M16 4v16M20 8v8"/></svg></span><span class="brand">Civitone</span><span class="sp"></span><span class="chip" data-dev></span></div>
+    <div class="center">
+      <div style="width:96px;height:96px;border-radius:24px;background:var(--s2);border:1px solid var(--line2);display:grid;place-items:center"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#f2b134" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg></div>
+      <div style="display:flex;flex-direction:column;gap:8px"><h1 class="big">Set up this <span id="what">speaker</span></h1><p class="sub">Three steps: pick its Wi-Fi, enter your server and an adopt code, then approve it in the console.</p></div>
+      <div class="card pad" style="display:flex;flex-direction:column;gap:12px">
+        <span class="lab">Have ready</span>
+        <div class="ready"><span class="num">1</span><span>The Wi-Fi password for the pole's network</span></div>
+        <div class="ready"><span class="num">2</span><span>An adopt code from the console: <span style="color:var(--ink2)">Setup → New adopt code</span></span></div>
+      </div>
+    </div>
+    <div class="end"><button class="btn" type="button" data-go="wifi">Start</button><p class="hint" style="text-align:center" id="build"></p></div>
+  </section>
+
+  <!-- 2 · Wi-Fi -->
+  <section class="scr" id="wifi" hidden>
+    <div class="top"><button class="back" type="button" data-back aria-label="Back"><svg width="16" height="16"><use href="#back"/></svg></button><span class="sp"></span><span class="chip" data-dev></span></div>
+    <div style="display:flex;flex-direction:column;gap:10px"><div class="bar"><i class="on"></i><i></i><i></i></div><span class="lab">Step 1 of 3</span><h1>Which Wi-Fi should it use?</h1></div>
+    <div class="card" style="overflow:hidden">
+      <div class="head"><span class="lab sp" id="found">Nearby</span><button class="link" type="button" id="rescan">Scan again</button></div>
+      <ul class="nets" id="nets" role="listbox" aria-label="Wi-Fi networks"></ul>
+    </div>
+    <label class="f" id="ssidRow" hidden>Network name<span class="field"><input id="ssid" maxlength="32" autocapitalize="off" autocorrect="off" spellcheck="false"></span></label>
+    <label class="f"><span id="pwLab">Password</span><span class="field"><input id="pw" type="password" maxlength="64" autocomplete="off"><button class="link" type="button" id="show" style="padding:8px">Show</button></span></label>
+    <button class="link" type="button" id="manual">Network not listed? Type its name</button>
+    <div class="err" id="wifiErr"></div>
+    <div class="end"><button class="btn" type="button" id="wifiNext">Next</button></div>
+  </section>
+
+  <!-- 3 · Server + adopt code -->
+  <section class="scr" id="server" hidden>
+    <div class="top"><button class="back" type="button" data-back aria-label="Back"><svg width="16" height="16"><use href="#back"/></svg></button><span class="sp"></span><span class="chip" data-dev></span></div>
+    <div style="display:flex;flex-direction:column;gap:10px"><div class="bar"><i class="ok"></i><i class="on"></i><i></i></div><span class="lab">Step 2 of 3</span><h1>Connect it to your Civitone</h1></div>
+    <div class="card summary"><svg width="18" height="18" style="color:var(--good)" aria-hidden="true"><use href="#tick"/></svg><span class="sp">Wi-Fi: <b id="sumNet"></b></span><button class="link" type="button" data-go="wifi">Change</button></div>
+    <label class="f">Server<span class="field"><input id="srv" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false"></span><span class="hint" style="font-weight:400">A name connects securely. On a local network, the controller's address and port, like 192.168.1.10:8080.</span></label>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <span style="font-size:14px;font-weight:600" id="codeLab">Adopt code</span>
+      <div class="code" id="codeBoxes"><span></span><span></span><span></span><em>–</em><span></span><span></span><span></span>
+        <input id="code" maxlength="7" autocapitalize="characters" autocorrect="off" autocomplete="one-time-code" spellcheck="false" aria-labelledby="codeLab"></div>
+      <span class="hint">In the console: <b style="color:#c7ccd2">Setup → New adopt code</b>. It's good for an hour and works for every node you add.</span>
+    </div>
+    <div class="err" id="srvErr"></div>
+    <div class="end"><button class="btn" type="button" id="connect">Connect</button></div>
+  </section>
+
+  <!-- 4 · Connecting -->
+  <section class="scr" id="connecting" hidden>
+    <div class="top"><span class="sp"></span><span class="chip" data-dev></span></div>
+    <div style="display:flex;flex-direction:column;gap:10px"><div class="bar"><i class="ok"></i><i class="ok"></i><i class="on"></i></div><span class="lab">Step 3 of 3</span><h1>Connecting…</h1></div>
+    <div class="card steps"><ul>
+      <li id="s-wifi"><span class="dot"><svg width="14" height="14" style="color:#0d0f12"><use href="#tick"/></svg></span><div><b></b><small></small></div></li>
+      <li id="s-srv"><span class="dot"><svg width="14" height="14" style="color:#0d0f12"><use href="#tick"/></svg></span><div><b></b><small></small></div></li>
+      <li id="s-code"><span class="dot"><svg width="14" height="14" style="color:#0d0f12"><use href="#tick"/></svg></span><div><b>Adopt code accepted</b><small></small></div></li>
+    </ul></div>
+    <div class="note"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8fc0ff" stroke-width="2" stroke-linecap="round" style="flex:none" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><span id="dropNote">Your phone may drop off this network for a few seconds while the speaker switches Wi-Fi. That's normal; this page picks up again on its own.</span></div>
+    <div class="end" style="align-items:center"><button class="link" type="button" data-go="settings">Change settings</button></div>
+  </section>
+
+  <!-- 5 · Waiting for approval -->
+  <section class="scr" id="approval" hidden>
+    <div class="top"><span class="sp"></span><span class="chip" data-dev></span></div>
+    <div style="display:flex;flex-direction:column;gap:10px"><div class="bar"><i class="ok"></i><i class="ok"></i><i class="pulse"></i></div><span class="lab">Almost done</span><h1>Approve it in the console</h1><p class="sub">It reached your server. An operator has to let it in.</p></div>
+    <div class="warnbox">
+      <span class="lab" style="color:#b9a984">Look for</span>
+      <div><div style="font-size:22px;font-weight:700"><span data-dev></span> wants to join</div><div style="font:500 13px var(--mono);color:#b9a984;margin-top:4px" id="lookMeta"></div></div>
+      <span style="font-size:14px;color:#e8d9b0">On another device: <b id="lookWhere"></b>. This phone has no internet while it's on the speaker's network.</span>
+    </div>
+    <div class="end"><p class="hint" style="text-align:center">Codes made with <b style="color:#c7ccd2">Approve automatically</b> skip this step.</p></div>
+  </section>
+
+  <!-- 6 · Done -->
+  <section class="scr" id="done" hidden>
+    <div class="top"><span class="sp"></span><span class="chip" data-dev></span></div>
+    <div class="center done">
+      <div class="tick"><svg width="52" height="52" style="color:var(--good)" aria-hidden="true"><use href="#tick"/></svg></div>
+      <h1 class="big">It's on the system</h1>
+      <p class="sub" style="max-width:300px" id="doneLine"></p>
+      <div class="card pad kv" style="align-self:stretch"><span>Wi-Fi</span><span id="dNet"></span><span>Address</span><span id="dIp" style="font-family:var(--mono)"></span><span>Next</span><span id="dNext">Put it on the map and aim A and B in the console</span></div>
+    </div>
+    <div class="end" style="align-items:stretch"><div class="meter"><i id="closeBar" style="width:100%"></i></div><p class="hint" style="text-align:center" id="closeLine">You can leave this network now.</p></div>
+  </section>
+
+  <!-- 7 · Problem -->
+  <section class="scr" id="problem" hidden>
+    <div class="top"><span class="sp"></span><span class="chip" data-dev></span></div>
+    <div style="display:flex;flex-direction:column;gap:10px"><div class="bar" id="pBar"><i class="bad"></i><i></i><i></i></div><h1 id="pTitle"></h1></div>
+    <div class="badbox">
+      <div style="display:flex;gap:12px;align-items:flex-start"><svg width="22" height="22" style="flex:none;color:var(--badink)" aria-hidden="true"><use href="#lock"/></svg><div><b id="pWhat"></b><p class="hint" id="pWhy" style="margin-top:3px"></p></div></div>
+      <div id="pPwRow"><span class="field" style="background:var(--bg)"><input id="pw2" type="password" maxlength="64" autocomplete="off" aria-label="Wi-Fi password"><button class="link" type="button" id="show2" style="padding:8px">Show</button></span></div>
+      <button class="btn" type="button" id="pRetry" style="height:50px;font-size:16px">Try again</button>
+      <button class="link" type="button" id="pOther" style="text-align:center"></button>
+    </div>
+  </section>
+
+  <!-- 8 · Adopted, lost its Wi-Fi -->
+  <section class="scr" id="readopt" hidden>
+    <div class="top"><span class="mark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0d0f12" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 10v4M8 6v12M12 9v6M16 4v16M20 8v8"/></svg></span><span class="brand">Civitone</span><span class="sp"></span><span class="chip" data-dev></span></div>
+    <div style="display:flex;flex-direction:column;gap:8px"><h1 id="rTitle"></h1><p class="sub" id="rLine"></p></div>
+    <div class="card saved" style="overflow:hidden">
+      <div class="head"><span class="lab">Saved networks · tried in order</span></div>
+      <ul id="savedList"></ul>
+      <button class="link" type="button" id="addNet" style="display:flex;align-items:center;gap:10px;padding:13px 14px;border-top:1px solid #1f242b;width:100%;font-size:15px">＋ Add a network</button>
+    </div>
+    <div class="err" id="rErr"></div>
+    <div class="card pad" style="margin-top:auto;display:flex;flex-direction:column;gap:8px">
+      <span style="font-size:15px;font-weight:600">Moving it to another Civitone?</span>
+      <span class="hint" id="moveLine"></span>
+      <button class="link" type="button" id="move">Move to another server</button>
+    </div>
+  </section>
+</main>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var info = { device_id: "this node", networks: [], adopted: false, server: "" };
+  var scanned = [], pick = "", manual = false, moving = false, sent = {}, history = [];
+  var cur = null, polling = null, lost = 0, closeMax = 0;
+
+  function get(u) { return fetch(u, { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }); }
+  function post(u, body) {
+    return fetch(u, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      .then(function (r) { return r.ok ? r.json() : r.text().then(function (t) { throw new Error(t || "Couldn't save."); }); });
+  }
+  function show(id, noHistory) {
+    if (cur && cur !== id && !noHistory) history.push(cur);
+    cur = id;
+    document.querySelectorAll(".scr").forEach(function (s) { s.hidden = s.id !== id; });
+    window.scrollTo(0, 0);
+  }
+  function text(id, t) { $(id).textContent = t; }
+  function savedNet(ssid) { return info.networks.indexOf(ssid) >= 0; }
+
+  // --- screens ---------------------------------------------------------------
+  document.addEventListener("click", function (e) {
+    var g = e.target.closest("[data-go]");
+    if (g) {
+      var to = g.dataset.go;
+      if (to === "settings") { stopPoll(); to = info.adopted && !moving ? "wifi" : "server"; }
+      if (to === "wifi") scan();
+      if (to === "server") prepServer();
+      show(to);
+    }
+    if (e.target.closest("[data-back]")) show(history.pop() || (info.adopted ? "readopt" : "welcome"), true);
+  });
+
+  // --- Wi-Fi -----------------------------------------------------------------
+  function bars(rssi) {
+    var lvl = rssi > -55 ? 4 : rssi > -67 ? 3 : rssi > -78 ? 2 : 1, h = "";
+    for (var i = 1; i <= 4; i++) h += '<i class="' + (i <= lvl ? "on" : "") + '" style="height:' + i * 4 + 'px"></i>';
+    return '<span class="sig" aria-label="Signal ' + lvl + ' of 4">' + h + '</span>';
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function drawNets() {
+    var list = $("nets");
+    if (!scanned.length) { list.innerHTML = '<li><span class="n"><b>No networks found</b><small>Type its name below.</small></span></li>'; return; }
+    list.innerHTML = scanned.map(function (n, i) {
+      var note = savedNet(n.ssid) ? "saved" : !n.secure ? "open" : n.rssi <= -78 ? "weak" : "";
+      if (i === 0 && note !== "weak") note = note ? note + " · strongest" : "strongest";
+      return '<li role="option" data-i="' + i + '" aria-selected="' + (!manual && n.ssid === pick) + '"><span class="n"><b>' + esc(n.ssid) + '</b><small>' + note + '</small></span>' + bars(n.rssi) +
+        '<svg width="14" height="14" style="color:var(--muted);' + (n.secure ? "" : "visibility:hidden") + '" aria-hidden="true"><use href="#lock"/></svg></li>';
+    }).join("");
+  }
+  function pwState() {
+    var ssid = manual ? $("ssid").value.trim() : pick;
+    text("pwLab", ssid ? "Password for " + ssid : "Password");
+    var n = scanned.find(function (x) { return x.ssid === ssid; });
+    $("pw").placeholder = savedNet(ssid) ? "Saved. Leave empty to keep it" : n && !n.secure ? "Open network: no password" : "";
+  }
+  function scan() {
+    text("found", "Scanning…");
+    get("/setup/scan").then(function (r) {
+      scanned = r.networks || [];
+      text("found", "Nearby · " + scanned.length + " found");
+      if (!pick) pick = (scanned.find(function (n) { return savedNet(n.ssid); }) || scanned[0] || {}).ssid || "";
+      drawNets(); pwState();
+    }).catch(function () { scanned = []; text("found", "Scan failed"); drawNets(); });
+  }
+  $("rescan").onclick = scan;
+  $("nets").onclick = function (e) {
+    var li = e.target.closest("li[data-i]");
+    if (!li) return;
+    pick = scanned[+li.dataset.i].ssid; manual = false; $("ssidRow").hidden = true;
+    drawNets(); pwState();
+    if (scanned[+li.dataset.i].secure && !savedNet(pick)) $("pw").focus();
+  };
+  $("manual").onclick = function () { manual = true; $("ssidRow").hidden = false; $("ssid").focus(); drawNets(); pwState(); };
+  $("ssid").oninput = pwState;
+  function toggle(btn, input) { btn.onclick = function () { var on = input.type === "password"; input.type = on ? "text" : "password"; btn.textContent = on ? "Hide" : "Show"; }; }
+  toggle($("show"), $("pw")); toggle($("show2"), $("pw2"));
+  function chosenSsid() { return manual ? $("ssid").value.trim() : pick; }
+  $("wifiNext").onclick = function () {
+    var ssid = chosenSsid(), pw = $("pw").value;
+    text("wifiErr", "");
+    if (!ssid) return text("wifiErr", "Pick a Wi-Fi network.");
+    var n = scanned.find(function (x) { return x.ssid === ssid; });
+    if (pw && pw.length < 8) return text("wifiErr", "Wi-Fi passwords are at least 8 characters.");
+    if (!pw && n && n.secure && !savedNet(ssid)) return text("wifiErr", "This network needs its password.");
+    sent.ssid = ssid; sent.password = pw;
+    if (info.adopted && !moving) return save({ ssid: ssid, password: pw });
+    prepServer(); show("server");
+  };
+
+  // --- server + adopt code -------------------------------------------------------
+  function prepServer() {
+    text("sumNet", sent.ssid || info.networks[0] || "");
+    if (!$("srv").value) $("srv").value = info.server || "";
+    drawCode();
+  }
+  function cleanCode() { return $("code").value.toUpperCase().replace(/[^0-9A-Z]/g, "").slice(0, 6); }
+  function drawCode() {
+    var c = cleanCode(), spans = $("codeBoxes").querySelectorAll("span");
+    spans.forEach(function (s, i) { s.textContent = c[i] || ""; s.className = i === c.length ? "cur" : ""; });
+  }
+  $("code").oninput = function () {
+    var c = cleanCode();
+    this.value = c.length > 3 ? c.slice(0, 3) + "-" + c.slice(3) : c;
+    drawCode();
+  };
+  $("connect").onclick = function () {
+    var code = cleanCode(), srv = $("srv").value.trim();
+    text("srvErr", "");
+    if (!srv) return text("srvErr", "Enter the server address.");
+    if (code.length !== 6) return text("srvErr", "The adopt code has 6 characters.");
+    if (!sent.ssid) sent.ssid = info.networks[0] || "";
+    save({ ssid: sent.ssid, password: sent.password || "", server: srv, code: code.slice(0, 3) + "-" + code.slice(3) });
+  };
+
+  // --- save and follow along -------------------------------------------------------
+  function save(body) {
+    var errBox = cur === "server" ? "srvErr" : cur === "problem" ? null : "wifiErr";
+    var btns = document.querySelectorAll(".btn");
+    btns.forEach(function (b) { b.disabled = true; });
+    sent = Object.assign({}, sent, body);
+    post("/setup/save", body).then(function () {
+      startPoll();
+    }).catch(function (e) {
+      if (errBox) text(errBox, e.message); else { text("pWhy", e.message); }
+    }).then(function () { btns.forEach(function (b) { b.disabled = false; }); });
+  }
+  function step(id, cls, title, detail) {
+    var li = $(id);
+    li.className = cls;
+    if (title != null) li.querySelector("b").textContent = title;
+    li.querySelector("small").textContent = detail || "";
+  }
+  function signal(rssi) { return rssi == null ? "" : rssi > -67 ? "signal good" : rssi > -78 ? "signal fair" : "signal weak"; }
+  function startPoll() {
+    lost = 0;
+    var ssid = sent.ssid || info.networks[0] || "Wi-Fi", srv = sent.server || info.server;
+    step("s-wifi", "wait", "Joining " + ssid, "");
+    step("s-srv", "todo", "Reaching " + srv, "");
+    step("s-code", "todo", sent.code ? "Adopt code accepted" : "Back on the system", "");
+    text("dropNote", "Your phone may drop off " + (info.ap || "this network") + " for a few seconds while the " + info.what + " switches Wi-Fi. That's normal; this page picks up again on its own.");
+    show("connecting");
+    stopPoll();
+    polling = setInterval(poll, 1000);
+    poll();
+  }
+  function stopPoll() { clearInterval(polling); polling = null; }
+  function poll() {
+    get("/setup/status").then(function (s) {
+      lost = 0;
+      var w = s.wifi, v = s.server, srv = sent.server || info.server;
+      if (w.state === "connected") step("s-wifi", "ok", "Joined " + w.ssid, [w.ip, signal(w.rssi)].filter(Boolean).join(" · "));
+      else if (w.problem && w.fails >= 3) return problemWifi(w);
+      else step("s-wifi", "wait", "Joining " + w.ssid, w.problem ? w.problem : "");
+      if (w.state !== "connected") return;
+      if (v.state === "connecting" || v.state === "idle") step("s-srv", "wait", "Reaching " + srv, "secure connection…");
+      else if (v.state === "error") return problemServer("Can't reach the server", v.detail || "It joined Wi-Fi but got no answer from " + srv + ". Check the address, and that this network reaches the internet.");
+      else step("s-srv", "ok", "Reached " + srv, "");
+      if (v.state === "rejected") return problemServer(sent.code ? "Adopt code not accepted" : "The server turned it away", v.detail || "Make a new code in the console and enter it here.");
+      if (v.state === "pending") return showApproval(w);
+      if (v.state === "adopted") return showDone(s);
+    }).catch(function () {
+      // The node's radio follows the channel of the network it joins, which
+      // can drop this phone off the setup network for a moment.
+      if (++lost > 20) text("dropNote", "Lost the setup network. If it's gone, setup finished: check the console.");
+    });
+  }
+  function showApproval(w) {
+    text("lookMeta", [info.mac, info.what, w.ssid].filter(Boolean).join(" · "));
+    text("lookWhere", (sent.server || info.server) + " → Nodes");
+    if (cur !== "approval") show("approval");
+  }
+  function showDone(s) {
+    var name = s.name || info.name;
+    $("doneLine").innerHTML = (name ? "Adopted as <b style=\"color:var(--ink)\">" + esc(name) + "</b>" : "Adopted") + " on " + esc(sent.server || info.server) + ". It plays whatever the console sends its zone.";
+    text("dNet", [s.wifi.ssid, signal(s.wifi.rssi)].filter(Boolean).join(" · "));
+    text("dIp", s.wifi.ip);
+    if (info.role === "source") text("dNext", "Assign its stream to zones in the console");
+    if (s.closing_in > 0) {
+      closeMax = Math.max(closeMax, s.closing_in);
+      $("closeBar").style.width = Math.round(s.closing_in / closeMax * 100) + "%";
+      text("closeLine", "This setup network closes in " + s.closing_in + " s. You can leave it now.");
+    }
+    if (cur !== "done") show("done");
+  }
+  function problemWifi(w) {
+    stopPoll();
+    var wrong = /password/.test(w.problem);
+    $("pBar").innerHTML = '<i class="bad"></i><i></i><i></i>';
+    text("pTitle", "Couldn't join " + w.ssid);
+    text("pWhat", wrong ? "The password was wrong" : w.problem.charAt(0).toUpperCase() + w.problem.slice(1));
+    text("pWhy", wrong ? "The network turned it away " + w.fails + " times. Check it and try again."
+      : /not found/.test(w.problem) ? "Out of range, or a 5 GHz-only network. Pick another, or move closer." : "Try again, or pick a different network.");
+    $("pPwRow").hidden = !wrong;
+    $("pw2").value = "";
+    $("pw2").placeholder = "Password for " + w.ssid;
+    $("pRetry").onclick = function () {
+      var b = { ssid: w.ssid, password: wrong ? $("pw2").value : (sent.password || "") };
+      if (sent.code) { b.server = sent.server; b.code = sent.code; }
+      save(b);
+    };
+    text("pOther", "Pick a different network");
+    $("pOther").onclick = function () { scan(); show("wifi"); };
+    show("problem");
+  }
+  function problemServer(what, why) {
+    stopPoll();
+    $("pBar").innerHTML = '<i class="ok"></i><i class="bad"></i><i></i>';
+    text("pTitle", what);
+    text("pWhat", what);
+    text("pWhy", why);
+    $("pPwRow").hidden = true;
+    $("pRetry").onclick = function () { $("code").value = ""; prepServer(); show("server"); };
+    text("pRetry", "Check the server and code");
+    text("pOther", "Change Wi-Fi");
+    $("pOther").onclick = function () { scan(); show("wifi"); };
+    show("problem");
+  }
+
+  // --- adopted node that lost its Wi-Fi ------------------------------------------
+  function drawSaved(status) {
+    var cur0 = status && status.wifi && status.wifi.ssid;
+    $("savedList").innerHTML = info.networks.map(function (ssid, i) {
+      var seen = scanned.find(function (n) { return n.ssid === ssid; });
+      var bad = ssid === cur0 && status.wifi.problem;
+      var note = bad ? status.wifi.problem : seen ? "in range · " + seen.rssi + " dBm" : "not in range";
+      return '<li><span style="font:700 12px var(--mono);color:var(--muted);width:14px">' + (i + 1) + '</span><span class="n sp" style="display:flex;flex-direction:column;gap:2px"><b>' + esc(ssid) + '</b><small style="font-size:13px;color:' + (bad ? "var(--badink)" : "var(--muted)") + '">' + esc(note) + '</small></span>' +
+        '<button class="sbtn" type="button" data-edit="' + i + '">Edit</button>' + (seen && !bad ? '<button class="sbtn p" type="button" data-use="' + i + '">Use now</button>' : "") + '</li>';
+    }).join("");
+  }
+  function showReadopt() {
+    var name = info.name || info.device_id;
+    text("rTitle", name + " lost its Wi-Fi");
+    text("rLine", "It's still adopted on " + info.server + ". Fix the Wi-Fi and it goes straight back; no new code needed.");
+    text("moveLine", "It leaves " + info.server + " and needs an adopt code from the new server.");
+    show("readopt", true);
+    drawSaved();
+    get("/setup/scan").then(function (r) { scanned = r.networks || []; return get("/setup/status"); }).then(drawSaved).catch(function () {});
+  }
+  $("savedList").onclick = function (e) {
+    var ed = e.target.closest("[data-edit]"), use = e.target.closest("[data-use]");
+    if (ed) { pick = info.networks[+ed.dataset.edit]; manual = false; scan(); show("wifi"); }
+    if (use) {
+      var ssid = info.networks[+use.dataset.use];
+      use.disabled = true; text("rErr", "");
+      sent = { ssid: ssid };
+      post("/setup/use", { ssid: ssid }).then(startPoll).catch(function (err) { text("rErr", err.message); use.disabled = false; });
+    }
+  };
+  $("addNet").onclick = function () { pick = ""; manual = false; scan(); show("wifi"); };
+  $("move").onclick = function () { moving = true; prepServer(); show("server"); };
+
+  // --- start ---------------------------------------------------------------------
+  get("/setup/info").then(function (i) {
+    info = Object.assign(info, i);
+    info.what = i.role === "source" ? "source" : "speaker";
+    info.ap = "civitone-" + String(i.device_id || "").split("-").pop();
+    document.querySelectorAll("[data-dev]").forEach(function (el) { el.textContent = i.device_id; });
+    text("what", info.what);
+    text("build", [i.board ? "Board " + i.board : "", i.fw ? "firmware " + i.fw : ""].filter(Boolean).join(" · "));
+    $("srv").value = i.server || "";
+    if (!i.adopted) return show("welcome", true);
+    // Adopted: just finished (the setup network lingers a few seconds), or
+    // lost its Wi-Fi.
+    return get("/setup/status").then(function (s) {
+      if (s.wifi.state === "connected" && s.server.state === "adopted") showDone(s); else showReadopt();
+    }, showReadopt);
+  }).catch(function () { show("welcome", true); });
+})();
+</script>
+</body>
+</html>

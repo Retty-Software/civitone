@@ -1,0 +1,54 @@
+--- a/main/main.c	2026-10-12 18:21:08
++++ b/main/main.c	2026-10-12 18:21:08
+@@ -31,6 +31,7 @@
+ #include "mdns.h"
+ #include "net_functions.h"
+ #include "network_interface.h"
++#include "civitone_ctrl.h"
+ #include "nvs_flash.h"
+ 
+ #include "esp32_udp_logger.h"
+@@ -1324,6 +1325,10 @@
+       }
+       if (dac_data.volume != dac_data_old.volume) {
+         audio_hal_set_volume(board_handle->audio_hal, dac_data.volume);
++      }
++      if (dac_data.volume != dac_data_old.volume ||
++          dac_data.mute != dac_data_old.mute) {
++        civitone_ctrl_note_dac(dac_data.volume, dac_data.mute);
+       }
+       if (dac_data.enabled != dac_data_old.enabled) {
+         if (dac_data.enabled) {
+@@ -1551,6 +1556,9 @@
+                           HTTP_TASK_PRIORITY, &t_http_get_task,
+                           HTTP_TASK_CORE_ID);
+ 
++  // Civitone: control channel to the controller (docs/control-protocol.md).
++  civitone_ctrl_start();
++
+   //  while (1) {
+   //    // audio_event_iface_msg_t msg;
+   //    vTaskDelay(portMAX_DELAY);  //(pdMS_TO_TICKS(5000));
+--- a/main/CMakeLists.txt	2026-10-12 18:21:08
++++ b/main/CMakeLists.txt	2026-10-12 18:21:08
+@@ -2,7 +2,7 @@
+                        INCLUDE_DIRS "."
+ 
+                        PRIV_REQUIRES esp_timer esp_wifi nvs_flash audio_board audio_hal audio_sal net_functions opus flac ota_server
+-                       				 ui_http_server network_interface custom_board settings_manager tas5805m_settings udp_logger
++                       				 ui_http_server network_interface custom_board settings_manager tas5805m_settings udp_logger civitone_ctrl
+                        )
+ 
+ set_source_files_properties(main.c PROPERTIES COMPILE_FLAGS -Wno-implicit-fallthrough)
+--- a/components/lightsnapcast/player.c	2026-10-12 18:21:08
++++ b/components/lightsnapcast/player.c	2026-10-12 18:21:08
+@@ -213,6 +213,9 @@
+  */
+ static volatile uint32_t civiUnderruns = 0;
+ 
++// Civitone: read by civitone_ctrl for the heartbeat.
++uint32_t civi_player_underruns(void) { return civiUnderruns; }
++
+ static IRAM_ATTR bool civi_i2s_underrun_cb(i2s_chan_handle_t handle,
+                                            i2s_event_data_t *event,
+                                            void *user_ctx) {

@@ -1,0 +1,3 @@
+[submodule "firmware/snapclient"]
+	path = firmware/snapclient
+	url = https://github.com/CarlosDerSeher/snapclient

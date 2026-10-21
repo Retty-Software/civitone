@@ -1,0 +1,11 @@
+menu "Civitone setup"
+    config CIVITONE_DEFAULT_SERVER
+        string "Server address pre-filled on the setup page"
+        default "civitone.rettysoftware.com"
+        help
+            Official builds point at the hosted server; self-hosters change it
+            on the setup page or here.
+    config CIVITONE_SETUP_AFTER_S
+        int "Seconds without Wi-Fi before the setup network comes back"
+        default 60
+endmenu

@@ -1,0 +1,11 @@
+menu "Civitone control channel"
+    config CIVITONE_BOARD
+        string "Board name sent in hello"
+        default "amped-esp32-plus"
+    config CIVITONE_ROLE_SOURCE
+        bool "This board is a source (sends audio), not a speaker"
+        default n
+        help
+            The hello says role "source" with 48 kHz mono, the device id
+            starts with "src-", and civitone_ctrl_send_audio streams PCM.
+endmenu
