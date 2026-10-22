@@ -3,6 +3,7 @@ package nodes
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -453,5 +454,25 @@ func TestSourceAdoptionAndAudio(t *testing.T) {
 	waitFor(t, "audio", func() bool { mu.Lock(); defer mu.Unlock(); return len(got) == 4 })
 	if hash, name, ok, _ := m.store.Adoption(context.Background(), "src-a"); !ok || name != "RadioDJ" || hash == "" {
 		t.Fatal("source adoption not stored")
+	}
+}
+
+func TestBeforeAdoptCanRefuse(t *testing.T) {
+	m, srv := setup(t)
+	full := errors.New("pole limit reached: 8 of 8")
+	m.BeforeAdopt = func(ctx context.Context, role string) error {
+		if role == RoleNode {
+			return full
+		}
+		return nil
+	}
+	n := dialCode(t, srv.URL, "civ-1a2b", "MANUAL")
+	n.read() // welcome
+	waitFor(t, "pending", func() bool { return len(m.States()) == 1 })
+	if err := m.Approve(context.Background(), "civ-1a2b", ""); err != full {
+		t.Fatalf("Approve = %v, want the limit error", err)
+	}
+	if _, _, ok, _ := m.store.Adoption(context.Background(), "civ-1a2b"); ok {
+		t.Fatal("adopted past the limit")
 	}
 }

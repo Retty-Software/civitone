@@ -164,6 +164,8 @@ type Manager struct {
 	OnAudio func(deviceID string, pcm []byte)
 	// OnPTT gets an adopted source's push-to-talk presses and releases.
 	OnPTT func(deviceID string, down bool)
+	// BeforeAdopt, if set, can refuse an approval (a plan's pole limit).
+	BeforeAdopt func(ctx context.Context, role string) error
 }
 
 func NewManager(store Store) *Manager {
@@ -580,6 +582,11 @@ func (m *Manager) Approve(ctx context.Context, deviceID, name string) error {
 	m.mu.Unlock()
 	if s == nil {
 		return ErrNotPending
+	}
+	if m.BeforeAdopt != nil {
+		if err := m.BeforeAdopt(ctx, role); err != nil {
+			return err
+		}
 	}
 	if name == "" {
 		name = n.state.Label

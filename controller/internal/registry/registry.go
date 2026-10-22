@@ -77,6 +77,22 @@ CREATE TABLE IF NOT EXISTS settings (
   key    TEXT PRIMARY KEY,
   value  TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS sessions (
+  id       TEXT PRIMARY KEY,     -- SHA-256 hex of the cookie value
+  person   TEXT NOT NULL,
+  expires  INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS signin_tokens (
+  id       TEXT PRIMARY KEY,     -- SHA-256 hex of the token
+  person   TEXT NOT NULL,
+  redirect TEXT NOT NULL DEFAULT '/',
+  expires  INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS usage_days (
+  day        TEXT PRIMARY KEY,   -- YYYY-MM-DD in the site's time zone
+  playing_s  INTEGER NOT NULL DEFAULT 0,
+  pole_s     INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS events (
   at     INTEGER NOT NULL,
   who    TEXT NOT NULL,
@@ -340,4 +356,83 @@ func (r *Registry) Events(ctx context.Context, limit int) ([]Event, error) {
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// CreateSignin stores a one-time sign-in token (its hash) for a person.
+func (r *Registry) CreateSignin(ctx context.Context, hash, person, redirect string, expires time.Time) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO signin_tokens (id,person,redirect,expires) VALUES (?,?,?,?)`, hash, person, redirect, expires.Unix())
+	return err
+}
+
+// UseSignin consumes a sign-in token: it works once, before it expires.
+func (r *Registry) UseSignin(ctx context.Context, hash string) (person, redirect string, ok bool, err error) {
+	var exp int64
+	err = r.db.QueryRowContext(ctx, `DELETE FROM signin_tokens WHERE id=? RETURNING person, redirect, expires`, hash).Scan(&person, &redirect, &exp)
+	if err == sql.ErrNoRows {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, err
+	}
+	_, _ = r.db.ExecContext(ctx, `DELETE FROM signin_tokens WHERE expires < ?`, time.Now().Unix())
+	return person, redirect, time.Now().Unix() < exp, nil
+}
+
+// CreateSession stores a console session (its hash).
+func (r *Registry) CreateSession(ctx context.Context, hash, person string, expires time.Time) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO sessions (id,person,expires) VALUES (?,?,?)`, hash, person, expires.Unix())
+	return err
+}
+
+// Session returns the person a live session belongs to.
+func (r *Registry) Session(ctx context.Context, hash string) (person string, ok bool) {
+	var exp int64
+	if err := r.db.QueryRowContext(ctx, `SELECT person, expires FROM sessions WHERE id=?`, hash).Scan(&person, &exp); err != nil {
+		return "", false
+	}
+	return person, time.Now().Unix() < exp
+}
+
+// EndSession signs a session out; expired ones are swept at the same time.
+func (r *Registry) EndSession(ctx context.Context, hash string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM sessions WHERE id=? OR expires < ?`, hash, time.Now().Unix())
+	return err
+}
+
+// UsageDay is one day's playing time.
+type UsageDay struct {
+	Day      string `json:"day"`
+	PlayingS int64  `json:"playing_s"`
+	PoleS    int64  `json:"pole_s"`
+}
+
+// AddUsage adds seconds to a day's totals.
+func (r *Registry) AddUsage(ctx context.Context, day string, playingS, poleS int64) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO usage_days (day,playing_s,pole_s) VALUES (?,?,?)
+		ON CONFLICT(day) DO UPDATE SET playing_s=playing_s+excluded.playing_s, pole_s=pole_s+excluded.pole_s`, day, playingS, poleS)
+	return err
+}
+
+// Usage returns the newest days first.
+func (r *Registry) Usage(ctx context.Context, days int) ([]UsageDay, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT day, playing_s, pole_s FROM usage_days ORDER BY day DESC LIMIT ?`, days)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []UsageDay{}
+	for rows.Next() {
+		var u UsageDay
+		if err := rows.Scan(&u.Day, &u.PlayingS, &u.PoleS); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// Backup writes a consistent copy of the database to path.
+func (r *Registry) Backup(ctx context.Context, path string) error {
+	_, err := r.db.ExecContext(ctx, `VACUUM INTO ?`, path)
+	return err
 }

@@ -170,3 +170,44 @@ func TestSpeakersDefaultAndSaved(t *testing.T) {
 		t.Fatalf("speakers = %+v, want %+v", n.Speakers, want)
 	}
 }
+
+func TestSigninSessionUsage(t *testing.T) {
+	ctx := context.Background()
+	r, err := Open(filepath.Join(t.TempDir(), "r.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	if err := r.CreateSignin(ctx, "h1", "u1", "/", time.Now().Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if p, _, ok, err := r.UseSignin(ctx, "h1"); err != nil || !ok || p != "u1" {
+		t.Fatalf("first use: %q %v %v", p, ok, err)
+	}
+	if _, _, ok, _ := r.UseSignin(ctx, "h1"); ok {
+		t.Fatal("token worked twice")
+	}
+	r.CreateSignin(ctx, "h2", "u1", "/", time.Now().Add(-time.Second))
+	if _, _, ok, _ := r.UseSignin(ctx, "h2"); ok {
+		t.Fatal("expired token worked")
+	}
+	r.CreateSession(ctx, "s1", "u1", time.Now().Add(time.Hour))
+	if p, ok := r.Session(ctx, "s1"); !ok || p != "u1" {
+		t.Fatal("session missing")
+	}
+	r.EndSession(ctx, "s1")
+	if _, ok := r.Session(ctx, "s1"); ok {
+		t.Fatal("session survived sign-out")
+	}
+	r.AddUsage(ctx, "2026-10-20", 10, 30)
+	r.AddUsage(ctx, "2026-10-21", 10, 30)
+	r.AddUsage(ctx, "2026-10-21", 5, 15)
+	u, _ := r.Usage(ctx, 31)
+	if len(u) != 2 || u[0].Day != "2026-10-21" || u[0].PlayingS != 15 || u[0].PoleS != 45 {
+		t.Fatalf("usage: %+v", u)
+	}
+	out := filepath.Join(t.TempDir(), "b.db")
+	if err := r.Backup(ctx, out); err != nil {
+		t.Fatal(err)
+	}
+}
