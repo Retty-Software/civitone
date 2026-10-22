@@ -1,0 +1,38 @@
+# Self-hosted Civitone on one server with Docker: the controller plus Caddy
+# for HTTPS. Put your hostname in .env next to this file:
+#
+#   CIVITONE_HOST=speakers.example.com
+#   CIVITONE_ADMIN_KEY=<openssl rand -hex 32>
+#
+# then: docker compose up -d
+#       docker compose exec civitone civitone signin-link --name "Your name"
+#
+# Open ports 80 and 443 (Caddy) and 1704 (audio to the poles).
+services:
+  civitone:
+    image: ghcr.io/retty-software/civitone:latest
+    build: ../..
+    restart: unless-stopped
+    ports:
+      - "1704:1704"
+    volumes:
+      - civitone-data:/data
+    environment:
+      CIVITONE_ADMIN_KEY: ${CIVITONE_ADMIN_KEY:?set CIVITONE_ADMIN_KEY in .env}
+      CIVITONE_PUBLIC_URL: https://${CIVITONE_HOST:?set CIVITONE_HOST in .env}
+      CIVITONE_SNAP_HOST: ${CIVITONE_HOST}
+      CIVITONE_SNAP_PORT: "1704"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    command: caddy reverse-proxy --from ${CIVITONE_HOST} --to civitone:8080
+    volumes:
+      - caddy-data:/data
+
+volumes:
+  civitone-data:
+  caddy-data:

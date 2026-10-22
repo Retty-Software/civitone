@@ -1,0 +1,7 @@
+.git
+dist
+firmware
+installer
+docs
+**/*.db
+**/*.db-*

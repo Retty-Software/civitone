@@ -29,7 +29,7 @@ firmware/     ESP-IDF. Speaker node firmware: a patched snapclient
               (firmware/snapclient, upstream as a submodule) plus Civitone's
               control channel and setup page. Input board firmware in firmware/source.
 installer/    Windows installer for Civitone Source.
-deploy/       Scripts to run your own controller on a Debian server.
+deploy/       Run your own controller: Docker (deploy/docker) or a Debian server.
 docs/         System design, control protocol, node setup, bench checklist.
 ```
 
@@ -43,7 +43,14 @@ docs/         System design, control protocol, node setup, bench checklist.
 
 ## Run your own controller
 
-On a Debian 12/13 server with a DNS name pointing at it:
+**With Docker** (any Linux server with a DNS name pointing at it): see
+[deploy/docker](deploy/docker/README.md). One container runs the controller and
+Snapcast; Compose adds Caddy for HTTPS. The console signs people in with
+one-time links, and the [admin API](docs/admin-api.md) lets scripts set
+access: owners, operators, and guests who get a few poles and sources only
+during their event's hours.
+
+**Without Docker**, on a Debian 12/13 server with a DNS name pointing at it:
 
 ```sh
 deploy/deploy.sh root@<server> <hostname> <email-for-lets-encrypt>   # first time
