@@ -28,6 +28,13 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "signin-link" {
+		if err := signinLink(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "signin-link:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	var (
 		listen       = flag.String("listen", ":8080", "console + control channel address")
 		snapBin      = flag.String("snapserver", defaultSnapBinary(), "snapserver binary (empty = don't launch, connect to an existing one)")
@@ -39,9 +46,20 @@ func main() {
 		snapHost     = flag.String("snap-host", "", "snapserver host sent to nodes at adoption (empty = the host they dialled)")
 		snapBufferMs = flag.Int("snap-buffer-ms", 2000, "speaker buffer until one is set in the console (overrides snapserver.conf's buffer when the controller runs snapserver)")
 		snapRuntime  = flag.String("snapserver-runtime-config", "", "where to write the config snapserver actually runs with (default: next to --db)")
-		snapPort     = flag.Int("snap-port", 1704, "snapserver stream port sent to nodes at adoption")
+		snapPort     = flag.Int("snap-port", envInt("CIVITONE_SNAP_PORT", 1704), "snapserver stream port sent to nodes at adoption")
+		adminKey     = flag.String("admin-key", os.Getenv("CIVITONE_ADMIN_KEY"), "turns on the admin API and console sign-in (docs/admin-api.md); also CIVITONE_ADMIN_KEY")
+		publicURL    = flag.String("public-url", os.Getenv("CIVITONE_PUBLIC_URL"), "the console's address, for sign-in links (e.g. https://main-street.example.com)")
 	)
 	flag.Parse()
+	if *snapHost == "" {
+		*snapHost = os.Getenv("CIVITONE_SNAP_HOST")
+	}
+	if *adminKey != "" && len(*adminKey) < 24 {
+		log.Fatal("--admin-key: use at least 24 random characters")
+	}
+	if v := os.Getenv("CIVITONE_LISTEN"); v != "" && !flagSet("listen") {
+		*listen = v
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -51,6 +69,10 @@ func main() {
 		log.Fatalf("registry: %v", err)
 	}
 	defer reg.Close()
+	st8, err := newSite(ctx, reg, *adminKey, *publicURL)
+	if err != nil {
+		log.Fatalf("site: %v", err)
+	}
 
 	// Speaker buffer: snapserver's [stream] buffer, i.e. how far behind
 	// real time every speaker plays. Set in the console; applying it
@@ -82,7 +104,11 @@ func main() {
 	chime := &chimer{sc: sc, buffer: func() time.Duration { return time.Duration(speakerBuffer()) * time.Millisecond }}
 
 	hub := ws.NewHub()
+	if st8.sessions() {
+		hub.Allow, hub.SameOrigin = st8.stillAllowed, true
+	}
 	nm := nodes.NewManager(regStore{reg})
+	nm.BeforeAdopt = st8.checkPoleLimit
 	nm.SnapHost, nm.SnapPort = *snapHost, *snapPort
 	refresh := make(chan struct{}, 1)
 	nm.OnEvent = func(e nodes.Event) {
@@ -158,7 +184,8 @@ func main() {
 				}
 				st = &snap.Status{}
 			}
-			hub.Broadcast(consoleState{Status: st, Nodes: nm.States(), Codes: activeCodes(), Sources: src.Infos(), Speakers: spk.all(), Paging: pager.State(), Latency: latencyState{speakerBuffer(), sup != nil}, Build: build, ServerTime: time.Now()})
+			hub.Broadcast(consoleState{Status: st, Nodes: nm.States(), Codes: activeCodes(), Sources: src.Infos(), Speakers: spk.all(), Paging: pager.State(), Latency: latencyState{speakerBuffer(), sup != nil}, Build: build, ServerTime: time.Now(),
+				Plan: st8.planView(ctx), Events: eventViews(st8), DefaultSource: st8.Doc().DefaultSource})
 		}
 		tick := time.NewTicker(2 * time.Second)
 		defer tick.Stop()
@@ -199,7 +226,22 @@ func main() {
 		}
 	}()
 
+	changed := func() {
+		select {
+		case refresh <- struct{}{}:
+		default:
+		}
+	}
+	go st8.countUsage(ctx, sc, names)
+	go st8.closeEvents(ctx, sc, src, names, changed)
+	logOps := func(r *http.Request, who, text string) { _ = reg.Log(r.Context(), who, "ops", text+by(r)) }
+	srcStream := streamOf(src)
+
 	mux := http.NewServeMux()
+	mux.HandleFunc("/signin", st8.signin)
+	mux.HandleFunc("/signout", st8.signout)
+	mux.HandleFunc("/api/me", st8.me(srcStream))
+	mux.Handle("/admin/v1/", &admin{site: st8, reg: reg, nm: nm, src: src, sc: sc, names: names, started: time.Now(), changed: changed})
 	mux.Handle("/ws", hub)
 	fw := firmwareStore{dir: filepath.Join(filepath.Dir(*dbPath), "firmware")}
 	mux.Handle("/firmware/", fw.serveNode(reg)) // nodes, with their device token; not behind the console login
@@ -234,7 +276,7 @@ func main() {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			_ = reg.Log(r.Context(), "console", "ops", fmt.Sprintf("speaker buffer set to %d ms (snapserver restarting)", ms))
+			logOps(r, "console", fmt.Sprintf("speaker buffer set to %d ms (snapserver restarting)", ms))
 			sup.Restart()
 			w.WriteHeader(http.StatusNoContent)
 		default:
@@ -279,7 +321,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
-		_ = reg.Log(r.Context(), parts[0], "ops", what)
+		logOps(r, parts[0], what)
 		w.WriteHeader(http.StatusNoContent)
 	})
 	// POST /api/page/end: stop the current page now
@@ -323,7 +365,7 @@ func main() {
 			if c.Auto {
 				how = "auto-approve"
 			}
-			_ = reg.Log(r.Context(), "console", "ops", fmt.Sprintf("adopt code %s created (%d min, %s)", nodes.FormatCode(c.Code), body.Minutes, how))
+			logOps(r, "console", fmt.Sprintf("adopt code %s created (%d min, %s)", nodes.FormatCode(c.Code), body.Minutes, how))
 			select {
 			case refresh <- struct{}{}:
 			default:
@@ -343,7 +385,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		_ = reg.Log(r.Context(), "console", "ops", "adopt code "+nodes.FormatCode(code)+" revoked")
+		logOps(r, "console", "adopt code "+nodes.FormatCode(code)+" revoked")
 		select {
 		case refresh <- struct{}{}:
 		default:
@@ -370,7 +412,7 @@ func main() {
 			defer cancel()
 			if err := nm.Approve(cctx, parts[0], strings.TrimSpace(body.Name)); err != nil {
 				code := http.StatusBadGateway
-				if err == nodes.ErrNotPending {
+				if err == nodes.ErrNotPending || errors.Is(err, errPoleLimit) {
 					code = http.StatusConflict
 				}
 				http.Error(w, err.Error(), code)
@@ -434,7 +476,7 @@ func main() {
 			}
 			nm.Rename(parts[0], name)
 			src.Rename(parts[0], name)
-			_ = reg.Log(r.Context(), parts[0], "ops", "renamed to "+strconv.Quote(name))
+			logOps(r, parts[0], "renamed to "+strconv.Quote(name))
 			w.WriteHeader(http.StatusNoContent)
 			return
 		case "speakers":
@@ -451,7 +493,7 @@ func main() {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			_ = reg.Log(r.Context(), parts[0], "ops", fmt.Sprintf("speakers: A %s, B %s", speakerText(sp.A), speakerText(sp.B)))
+			logOps(r, parts[0], fmt.Sprintf("speakers: A %s, B %s", speakerText(sp.A), speakerText(sp.B)))
 			select {
 			case refresh <- struct{}{}:
 			default:
@@ -505,7 +547,7 @@ func main() {
 				http.Error(w, err.Error(), http.StatusBadGateway)
 				return
 			}
-			_ = reg.Log(r.Context(), parts[0], "ops", fmt.Sprintf("firmware update to %s started (was %s)", img.Version, st.FW))
+			logOps(r, parts[0], fmt.Sprintf("firmware update to %s started (was %s)", img.Version, st.FW))
 			w.WriteHeader(http.StatusNoContent)
 			return
 		case "chirp":
@@ -585,7 +627,7 @@ func main() {
 			http.Error(w, err.Error(), code)
 			return
 		}
-		_ = reg.Log(r.Context(), parts[0], "ops", cmd+" (console)")
+		logOps(r, parts[0], cmd+" (console)")
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
@@ -617,6 +659,20 @@ func main() {
 		}
 		pct := clamp(body.Percent, 0, 100)
 		before, _ := sc.GetStatus(r.Context())
+		if p := who(r); !p.Admin {
+			pole := ""
+			if before != nil {
+				if c, ok := findClient(before, parts[0]); ok {
+					pole, _ = names.client(c)
+				}
+			}
+			limit, ok := p.Poles[pole]
+			if !ok {
+				jsonError(w, http.StatusForbidden, "that pole isn't part of your event")
+				return
+			}
+			pct = min(pct, limit)
+		}
 		if err := sc.SetVolume(r.Context(), parts[0], pct, body.Muted); err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
@@ -627,11 +683,11 @@ func main() {
 				was := c.Config.Volume
 				switch {
 				case was.Muted != body.Muted && body.Muted:
-					_ = reg.Log(r.Context(), who, "ops", name+" muted")
+					logOps(r, who, name+" muted")
 				case was.Muted != body.Muted:
-					_ = reg.Log(r.Context(), who, "ops", name+" unmuted")
+					logOps(r, who, name+" unmuted")
 				case was.Percent != pct:
-					_ = reg.Log(r.Context(), who, "ops", fmt.Sprintf("%s volume %d%% → %d%%", name, was.Percent, pct))
+					logOps(r, who, fmt.Sprintf("%s volume %d%% → %d%%", name, was.Percent, pct))
 				}
 			}
 		}
@@ -660,6 +716,25 @@ func main() {
 			return
 		}
 		before, _ := sc.GetStatus(r.Context())
+		if p := who(r); !p.Admin {
+			g, ok := snap.Group{}, false
+			if before != nil {
+				g, ok = findGroup(before, parts[0])
+			}
+			for _, c := range g.Clients {
+				if pole, _ := names.client(c); p.Poles[pole] == 0 {
+					ok = false
+				}
+			}
+			if !ok || len(g.Clients) == 0 {
+				jsonError(w, http.StatusForbidden, "that zone has poles outside your event")
+				return
+			}
+			if !st8.guestMayPlay(p, body.StreamID, srcStream) {
+				jsonError(w, http.StatusForbidden, "that source isn't part of your event")
+				return
+			}
+		}
 		if err := sc.SetGroupStream(r.Context(), parts[0], body.StreamID); err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
@@ -667,7 +742,7 @@ func main() {
 		if before != nil {
 			if g, ok := findGroup(before, parts[0]); ok {
 				who, name := names.group(g)
-				_ = reg.Log(r.Context(), who, "ops", fmt.Sprintf("%s: %s → %s", name, names.stream(g.StreamID), names.stream(body.StreamID)))
+				logOps(r, who, fmt.Sprintf("%s: %s → %s", name, names.stream(g.StreamID), names.stream(body.StreamID)))
 			}
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -691,8 +766,12 @@ func main() {
 			return
 		}
 		var failed []string
+		p := who(r)
 		for _, g := range st.Server.Groups {
 			for _, c := range g.Clients {
+				if pole, _ := names.client(c); !p.Admin && p.Poles[pole] == 0 {
+					continue // a guest's mute-all is their event's poles
+				}
 				if err := sc.SetVolume(r.Context(), c.ID, c.Config.Volume.Percent, body.Muted); err != nil {
 					failed = append(failed, c.ID)
 				}
@@ -702,7 +781,7 @@ func main() {
 		if body.Muted {
 			verb = "MUTED"
 		}
-		_ = reg.Log(r.Context(), "console", "ops", "all zones "+verb)
+		logOps(r, "console", "all zones "+verb)
 		if len(failed) > 0 {
 			http.Error(w, "failed: "+strings.Join(failed, ", "), http.StatusBadGateway)
 			return
@@ -711,7 +790,7 @@ func main() {
 	})
 	mux.Handle("/", web.Handler())
 
-	httpSrv := &http.Server{Addr: *listen, Handler: mux}
+	httpSrv := &http.Server{Addr: *listen, Handler: st8.guard(mux)}
 	go func() {
 		<-ctx.Done()
 		sctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -743,14 +822,48 @@ func defaultSnapBinary() string {
 // console reads state.server) plus the control-channel view of each node.
 type consoleState struct {
 	*snap.Status
-	Nodes      []nodes.State                `json:"nodes"`
-	Build      string                       `json:"build"` // changes on every controller start; open consoles reload
-	Codes      []registry.AdoptCode         `json:"codes"`
-	Sources    []sources.Info               `json:"sources"`  // with live levels; snapserver's "playing" only means bytes arrive
-	Speakers   map[string]registry.Speakers `json:"speakers"` // device id -> saved trim and mute for A and B
-	Paging     paging.State                 `json:"paging"`
-	Latency    latencyState                 `json:"latency"`
-	ServerTime time.Time                    `json:"server_time"` // "ago" is measured against this, not the browser clock
+	Nodes         []nodes.State                `json:"nodes"`
+	Build         string                       `json:"build"` // changes on every controller start; open consoles reload
+	Codes         []registry.AdoptCode         `json:"codes"`
+	Sources       []sources.Info               `json:"sources"`  // with live levels; snapserver's "playing" only means bytes arrive
+	Speakers      map[string]registry.Speakers `json:"speakers"` // device id -> saved trim and mute for A and B
+	Paging        paging.State                 `json:"paging"`
+	Latency       latencyState                 `json:"latency"`
+	ServerTime    time.Time                    `json:"server_time"` // "ago" is measured against this, not the browser clock
+	Plan          planView                     `json:"plan"`
+	Events        []eventView                  `json:"events"` // for standby labels on sources; who may do what is /api/me
+	DefaultSource string                       `json:"default_source"`
+}
+
+type eventView struct {
+	ID      string    `json:"id"`
+	Name    string    `json:"name"`
+	Sources []string  `json:"sources"`
+	Open    bool      `json:"open"`
+	Until   time.Time `json:"until,omitzero"`
+	Next    time.Time `json:"next,omitzero"`
+}
+
+func eventViews(s *site) []eventView {
+	doc, loc, now := s.Doc(), s.Loc(), s.now()
+	out := []eventView{}
+	for _, e := range doc.Events {
+		st := e.At(now, loc)
+		out = append(out, eventView{ID: e.ID, Name: e.Name, Sources: e.Sources, Open: st.Open, Until: st.Until, Next: st.Next})
+	}
+	return out
+}
+
+func envInt(name string, def int) int {
+	if v, err := strconv.Atoi(os.Getenv(name)); err == nil {
+		return v
+	}
+	return def
+}
+
+func flagSet(name string) (set bool) {
+	flag.Visit(func(f *flag.Flag) { set = set || f.Name == name })
+	return set
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {

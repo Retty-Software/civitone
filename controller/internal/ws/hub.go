@@ -15,13 +15,21 @@ import (
 
 type Hub struct {
 	mu    sync.Mutex
-	conns map[*websocket.Conn]struct{}
+	conns map[*websocket.Conn]*http.Request
 	last  []byte // last state frame, sent to new connections
+
+	// Allow, if set, is asked on every state push whether each console may
+	// still watch (its sign-in is still good); the ones that may not are
+	// closed.
+	Allow func(*http.Request) bool
+	// SameOrigin refuses browsers on other sites, for consoles that sign in
+	// with a cookie.
+	SameOrigin bool
 
 	sending sync.Map // *websocket.Conn -> true while a live frame is being written
 }
 
-func NewHub() *Hub { return &Hub{conns: map[*websocket.Conn]struct{}{}} }
+func NewHub() *Hub { return &Hub{conns: map[*websocket.Conn]*http.Request{}} }
 
 // Broadcast sends v as JSON to every connected console.
 func (h *Hub) Broadcast(v interface{}) {
@@ -33,10 +41,21 @@ func (h *Hub) Broadcast(v interface{}) {
 	h.mu.Lock()
 	h.last = b
 	conns := make([]*websocket.Conn, 0, len(h.conns))
-	for c := range h.conns {
+	var gone []*websocket.Conn
+	for c, r := range h.conns {
+		if h.Allow != nil && !h.Allow(r) {
+			gone = append(gone, c)
+			continue
+		}
 		conns = append(conns, c)
 	}
 	h.mu.Unlock()
+	for _, c := range gone {
+		h.mu.Lock()
+		delete(h.conns, c)
+		h.mu.Unlock()
+		c.Close(4003, "signed out")
+	}
 	for _, c := range conns {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		if err := c.Write(ctx, websocket.MessageText, b); err != nil {
@@ -92,12 +111,12 @@ func (h *Hub) drop(c *websocket.Conn) {
 
 // ServeHTTP upgrades a console browser connection.
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: !h.SameOrigin})
 	if err != nil {
 		return
 	}
 	h.mu.Lock()
-	h.conns[c] = struct{}{}
+	h.conns[c] = r
 	last := h.last
 	h.mu.Unlock()
 	if last != nil {
