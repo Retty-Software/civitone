@@ -87,6 +87,17 @@
   .banner .live .btn { background: #fff; color: var(--bad); border-color: #fff; }
   .banner .down { background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad-ink); }
   .banner .t { font: 700 12px var(--mono); letter-spacing: .12em; }
+  .banner .info { background: var(--s1); border: 1px solid var(--line2); color: var(--ink2); font-weight: 500; }
+  .banner .info .t { color: var(--muted); }
+  .banner .soon { background: var(--accent-bg); border: 1px solid var(--accent-line); color: var(--accent-ink); }
+  .whoami { display: inline-flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--muted); }
+  .whoami b { color: var(--ink2); font-weight: 600; }
+  .gate { position: fixed; inset: 0; z-index: 20; background: var(--bg); display: grid; place-items: center; padding: 24px 16px; }
+  .gate > div { max-width: 440px; display: flex; flex-direction: column; gap: 14px; }
+  .gate h1 { margin: 0; font-size: 28px; line-height: 1.1; }
+  .gate p { margin: 0; color: var(--ink2); font-size: 16px; }
+  .gate .when { font: 700 22px var(--mono); color: var(--accent); }
+  .gate ul { margin: 0; padding-left: 18px; color: var(--ink2); }
   .banner .grow { flex: 1 1 200px; }
 
   main { max-width: 1600px; margin: 0 auto; padding: 18px 24px 48px; }
@@ -112,6 +123,8 @@
   .strip { background: var(--s1); border: 1px solid var(--line); border-radius: 14px; padding: 14px 10px 12px; display: flex; flex-direction: column; align-items: center; gap: 11px; min-width: 0; }
   .strip.off { border-color: #4a2520; }
   .strip.off > :not(.sh):not(.sn):not(.rssi) { opacity: .55; }
+  .strip.locked { background: transparent; border-style: dashed; }
+  .strip.locked > :not(.sh):not(.sn) { opacity: .4; }
   .strip .sh { align-self: stretch; display: flex; align-items: center; gap: 6px; padding: 0 2px; min-width: 0; }
   .led { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
   .led.good { background: var(--good); } .led.warn { background: var(--warn); } .led.bad { background: var(--bad); }
@@ -289,6 +302,7 @@
   </nav>
   <span class="linkst" id="link"><i></i><span id="linkText">connecting…</span></span>
   <span class="spacer"></span>
+  <span class="whoami" id="whoami" hidden></span>
   <span class="clock" id="clock"></span>
   <button class="killall" id="killall" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4zM23 9l-6 6M17 9l6 6"/></svg><span>Mute all</span></button>
 </header>
@@ -303,7 +317,7 @@
         <div class="strips" id="strips"></div>
       </div>
       <aside class="side">
-        <div class="sechead"><span class="lab">Sources</span><a href="#sources">Manage</a></div>
+        <div class="sechead"><span class="lab">Sources</span><a href="#sources" data-admin>Manage</a></div>
         <div id="conSources" style="display:flex;flex-direction:column;gap:10px"></div>
         <div class="sechead" style="margin-top:6px"><span class="lab">Activity</span><a href="#activity">All activity</a></div>
         <div class="card"><div class="log" id="conLog"></div></div>
@@ -405,6 +419,7 @@
   </section>
 </main>
 <div class="toast" id="toast" role="alert" hidden></div>
+<div class="gate" id="gate" hidden></div>
 
 <script>
 (function () {
@@ -416,6 +431,8 @@
   var hist = {};       // device_id -> heartbeat samples since this page opened, for the node sparklines
   var meterPrev = {};  // meter key -> last drawn percent, so redraws animate from there
   var fast = {}, fastAt = 0; // source device id -> peak dBFS from the ~10/s "levels" frames
+  var me = null;       // /api/me: who's signed in and what they may do now
+  var liveSocket = null;
   var $ = function (id) { return document.getElementById(id); };
 
   function esc(s) {
@@ -440,6 +457,77 @@
   function fmtCode(c) { return c && c.length === 6 ? c.slice(0, 3) + "-" + c.slice(3) : c; }
   function gainText(db) { return (db > 0 ? "+" : db < 0 ? "−" : "±") + Math.abs(db) + " dB"; }
   function plural(n, word) { return n + " " + word + (n === 1 ? "" : "s"); }
+
+  // --- who's signed in --------------------------------------------------------
+
+  function isAdmin() { return !me || !me.can || me.can.admin; }
+  function poleCap(deviceId) {
+    if (isAdmin()) return 100;
+    return (me.can.caps && me.can.caps[deviceId]) || 0;
+  }
+  function rowAllowed(r) { return isAdmin() || !!(r.node && poleCap(r.node.device_id)); }
+  function zoneAllowed(g) {
+    if (isAdmin()) return true;
+    var rs = rows().filter(function (r) { return r.group && r.group.id === g.id; });
+    return rs.length > 0 && rs.every(rowAllowed);
+  }
+  function streamAllowed(id) { return isAdmin() || (me.can.sources || []).indexOf(id) >= 0; }
+  function siteTZ() { return (me && me.plan && me.plan.timezone) || undefined; }
+  // "Sat 6:00 AM" within the week, "Dec 18, 4:00 PM" further out; in the site's time zone.
+  function when(t) {
+    var d = new Date(t), soon = d.getTime() - now() < 6 * 86400e3;
+    var o = soon ? { weekday: "short", hour: "numeric", minute: "2-digit" } : { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" };
+    try { o.timeZone = siteTZ(); return d.toLocaleString(undefined, o); } catch (e) { delete o.timeZone; return d.toLocaleString(undefined, o); }
+  }
+  function sourceStandby(x) {
+    // A source that only belongs to events that are all closed: standby until the next one opens.
+    var evs = (state.events || []).filter(function (e) { return (e.sources || []).indexOf(x.device_id) >= 0; });
+    if (!evs.length || evs.some(function (e) { return e.open; })) return null;
+    var next = evs.filter(function (e) { return e.next; }).sort(function (a, b) { return new Date(a.next) - new Date(b.next); })[0];
+    return next ? "standby · " + next.name + " opens " + when(next.next) : "standby · no event scheduled";
+  }
+
+  function gate(html) {
+    var g = $("gate");
+    if (!html) { g.hidden = true; g.innerHTML = ""; return; }
+    g.innerHTML = '<div>' + html + '</div>';
+    g.hidden = false;
+  }
+  function loadMe() {
+    return fetch("/api/me").then(function (r) {
+      return r.json().catch(function () { return null; }).then(function (v) { return { status: r.status, v: v }; });
+    }).then(function (res) {
+      if (res.status === 401) {
+        me = null;
+        gate('<h1>Signed out</h1><p>Open this console again from your account. Sign-in links work once and sessions last 12 hours.</p>');
+        return;
+      }
+      me = res.v;
+      var w = $("whoami");
+      if (me.auth === "session" && me.person) {
+        w.innerHTML = '<span><b>' + esc(me.person.name || me.person.email || "Signed in") + '</b> · ' + esc(me.person.role) + '</span><button class="btn sm" type="button" data-act="signout">Sign out</button>';
+        w.hidden = false;
+      } else w.hidden = true;
+      document.querySelectorAll(".nav a").forEach(function (a) {
+        a.hidden = !isAdmin() && ["nodes", "sources", "setup"].indexOf(a.dataset.nav) >= 0;
+      });
+      document.querySelectorAll("[data-admin]").forEach(function (a) { a.hidden = !isAdmin(); });
+      if (!me.open) {
+        var names = (me.events || []).map(function (e) { return '<li>' + esc(e.name) + (e.next ? " · opens " + esc(when(e.next)) : " · nothing scheduled") + '</li>'; }).join("");
+        gate('<h1>Your access isn\'t open yet</h1>' +
+          (me.next ? '<p>The console opens for you</p><span class="when">' + esc(when(me.next)) + '</span>' : '<p>None of your events has another date scheduled.</p>') +
+          (names ? '<ul>' + names + '</ul>' : '') +
+          '<p class="hint">This page checks again every minute.</p>' +
+          '<button class="btn" type="button" data-act="signout">Sign out</button>');
+        if (liveSocket) liveSocket.close();
+        return;
+      }
+      gate(null);
+      if (!isAdmin() && ["console", "activity"].indexOf(view) < 0) location.hash = "#console";
+      if (!liveSocket) connect();
+      render();
+    }).catch(function () { /* offline: the socket's retry shows it */ });
+  }
   function secs(ms) { return (ms / 1000).toFixed(ms < 1000 ? 2 : 1) + " s"; }
   // Peak dBFS on a -60..0 scale, the meter's floor.
   function pct(db) { return db == null || db <= -60 ? 0 : Math.min(100, Math.round((db + 60) / 60 * 100)); }
@@ -581,7 +669,12 @@
       headers: body ? { "Content-Type": "application/json" } : {},
       body: body ? JSON.stringify(body) : undefined
     }).then(function (r) {
-      if (!r.ok) return r.text().then(function (t) { throw new Error(t || r.status); });
+      if (r.status === 401) loadMe();
+      if (!r.ok) return r.text().then(function (t) {
+        var msg = t;
+        try { msg = JSON.parse(t).error || t; } catch (e) { /* plain text */ }
+        throw new Error((msg || String(r.status)).trim());
+      });
       return r.status === 204 ? null : r.json().catch(function () { return null; });
     });
   }
@@ -670,15 +763,41 @@
       b.innerHTML = '<div class="down"><span class="t">PAGING MIC OFFLINE</span><span class="grow">' + esc(down.map(function (x) { return x.name; }).join(", ")) +
         ' is not connected. Emergency pages will not play.</span></div>';
       b.hidden = false;
+    } else if (me && me.suspended) {
+      b.innerHTML = '<div class="down"><span class="t">SUSPENDED</span><span class="grow">This site\'s console is read-only. Audio keeps playing as it is. The account owner can fix this in billing.</span></div>';
+      b.hidden = false;
+    } else if (me && !isAdmin() && me.until) {
+      var left = Math.round((new Date(me.until).getTime() - now()) / 60000);
+      var evs = (me.events || []).filter(function (e) { return e.open; }).map(function (e) { return e.name; }).join(", ");
+      b.innerHTML = left <= 15
+        ? '<div class="soon"><span class="t">ENDING SOON</span><span class="grow">' + esc(evs) + ': your access ends in ' + plural(Math.max(0, left), "minute") + '. Zones then go back to the site\'s default source.</span></div>'
+        : '<div class="info"><span class="t">' + esc(evs.toUpperCase()) + '</span><span class="grow">Open until ' + esc(when(me.until)) + '. You can run the zones and sources of your event.</span></div>';
+      b.hidden = false;
     } else {
       b.hidden = true;
+    }
+    var allowedClients = all.filter(rowAllowed);
+    k.hidden = !isAdmin() && !allowedClients.length;
+    if (!isAdmin()) {
+      var mineMuted = allowedClients.length > 0 && allowedClients.every(function (r) { return r.client.config.volume.muted; });
+      k.classList.toggle("on", mineMuted);
+      k.setAttribute("aria-pressed", String(mineMuted));
+      k.querySelector("span").textContent = mineMuted ? "Unmute my zones" : "Mute my zones";
     }
   }
 
   // --- approvals (Console, Nodes, Setup) --------------------------------------
 
+  function poleLimitNote() {
+    var p = state.plan || {};
+    if (!p.pole_limit) return "";
+    var full = p.poles_used >= p.pole_limit;
+    return '<p class="hint"' + (full ? ' style="color:var(--warn)"' : '') + '>' + p.poles_used + ' of ' + p.pole_limit + ' poles on this plan' +
+      (full ? '. New speakers can\'t be approved until a pole is removed or the plan gets more poles. Sources don\'t count.' : '.') + '</p>';
+  }
   function pendHTML() {
-    return pendingNodes().map(function (n) {
+    var limit = poleLimitNote();
+    return (pendingNodes().some(function (n) { return n.role !== "source"; }) ? limit : "") + pendingNodes().map(function (n) {
       var hb = n.hb || {};
       var what = n.role === "source" ? "source" + (n.kind ? " · " + n.kind : "") : "speaker";
       var meta = [n.mac, what, n.board, "fw " + (n.fw || "?"), hb.rssi != null ? hb.rssi + " dBm" : "", hb.ip].filter(Boolean).join(" · ");
@@ -707,20 +826,27 @@
       return '<option value="' + esc(s.id) + '"' + (s.id === g.stream_id ? " selected" : "") + '>' + esc(streamName(s.id)) + (s.id === "None" || st.on ? "" : " (" + esc(st.label) + ")") + '</option>';
     }).join("") : "";
     var connected = r.node && r.node.connected;
-    return '<section class="strip' + (h.cls === "bad" ? " off" : "") + '">' +
+    var mine = rowAllowed(r), cap = r.node ? poleCap(r.node.device_id) : 100, gOK = g && zoneAllowed(g);
+    if (!isAdmin() && g) {
+      opts = visibleStreams().filter(function (s) { return s.id === g.stream_id || streamAllowed(s.id); }).map(function (s) {
+        return '<option value="' + esc(s.id) + '"' + (s.id === g.stream_id ? " selected" : "") + (streamAllowed(s.id) ? "" : " disabled") + '>' + esc(streamName(s.id)) + '</option>';
+      }).join("");
+    }
+    var off = mine ? "" : " disabled";
+    return '<section class="strip' + (h.cls === "bad" ? " off" : "") + (mine ? "" : " locked") + '"' + (mine ? "" : ' title="Not part of your event"') + '>' +
       '<div class="sh"><span class="led ' + h.cls + '" title="' + esc(h.txt) + '"></span><span class="sid">' + esc(r.node ? r.node.device_id : ipOf(r)) + '</span></div>' +
       '<a class="sn" href="#node/' + encodeURIComponent(r.key) + '">' + esc(rowName(r)) + '</a>' +
       '<div class="mix"><div class="scale" aria-hidden="true"><span>0</span><span>-12</span><span>-24</span><span>-36</span><span>-48</span><span>-60</span></div>' +
         '<div class="vm" role="meter" aria-label="' + esc(rowName(r)) + ' level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + zoneLevel(r) + '"><div ' + meterAttr("z:" + r.key, zoneLevel(r)) + '></div></div>' +
-        (c ? '<input class="fader" type="range" min="0" max="100" value="' + vol + '" data-vol="' + esc(c.id) + '" aria-label="' + esc(rowName(r)) + ' volume">'
+        (c ? '<input class="fader" type="range" min="0" max="' + (mine ? cap : 100) + '" value="' + Math.min(vol, mine ? cap : 100) + '" data-vol="' + esc(c.id) + '" aria-label="' + esc(rowName(r)) + ' volume"' + off + '>'
            : '<span class="nofader">no audio</span>') +
       '</div>' +
       '<div class="vol"><span data-volv="' + esc(c ? c.id : "") + '">' + (vol == null ? "–" : vol) + '</span><small> %</small></div>' +
-      (g ? '<select data-group="' + esc(g.id) + '" class="' + (g.stream_id && g.stream_id !== "None" ? "on" : "") + '" aria-label="Source for ' + esc(rowName(r)) + '">' + opts + '</select>' : '') +
-      spkStripHTML(r) +
+      (g ? '<select data-group="' + esc(g.id) + '" class="' + (g.stream_id && g.stream_id !== "None" ? "on" : "") + '" aria-label="Source for ' + esc(rowName(r)) + '"' + (gOK ? "" : " disabled") + '>' + opts + '</select>' : '') +
+      (isAdmin() ? spkStripHTML(r) : '') +
       '<div class="btns">' +
-        '<button type="button" data-act="mute" data-id="' + esc(c ? c.id : "") + '" class="' + (muted ? "on" : "") + '" aria-pressed="' + !!muted + '"' + (c ? "" : " disabled") + '>MUTE</button>' +
-        '<button type="button" data-act="identify" data-id="' + esc(r.node ? r.node.device_id : "") + '"' + (connected ? "" : " disabled") + ' title="Play a chime on this speaker">ID</button>' +
+        '<button type="button" data-act="mute" data-id="' + esc(c ? c.id : "") + '" class="' + (muted ? "on" : "") + '" aria-pressed="' + !!muted + '"' + (c && mine ? "" : " disabled") + '>MUTE</button>' +
+        (isAdmin() ? '<button type="button" data-act="identify" data-id="' + esc(r.node ? r.node.device_id : "") + '"' + (connected ? "" : " disabled") + ' title="Play a chime on this speaker">ID</button>' : '') +
       '</div>' +
       '<div class="rssi ' + (h.cls === "bad" ? "bad" : rssiClass(hb.rssi)) + '">' + (h.cls === "bad" ? (r.node && r.node.last_seen ? "seen " + ago(r.node.last_seen) : "offline") : hb.rssi == null ? "–" : hb.rssi + " dBm") + '</div>' +
     '</section>';
@@ -730,12 +856,12 @@
     var st = streamState(x.stream), n = zonesOn(x.stream).length;
     return '<div class="srcmini"><div class="h"><span class="swatch" style="background:' + sourceColor(x) + '"></span><b>' + esc(x.name) + '</b><span class="pill ' + st.cls + '">' + esc(st.label) + '</span></div>' +
       '<div class="hm"><div ' + meterAttr("s:" + x.device_id, x.connected && x.level.capturing ? pct(srcPeak(x)) : 0, true) + '></div></div>' +
-      '<div class="meta">' + esc((x.paging ? "paging mic" : "on " + n + " zone" + (n === 1 ? "" : "s")) + (x.buffer && x.buffer.underruns ? " · " + plural(x.buffer.underruns, "underrun") : "")) + '</div></div>';
+      '<div class="meta">' + esc((x.paging ? "paging mic" : "on " + n + " zone" + (n === 1 ? "" : "s")) + (x.buffer && x.buffer.underruns ? " · " + plural(x.buffer.underruns, "underrun") : "") + (sourceStandby(x) ? " · " + sourceStandby(x) : "")) + '</div></div>';
   }
 
   function renderConsole() {
     var rs = rows();
-    var pend = pendingNodes().length;
+    var pend = isAdmin() ? pendingNodes().length : 0;
     $("conPend").innerHTML = pend ? '<div class="notice"><span class="led warn"></span><b>' + pend + ' device' + (pend === 1 ? "" : "s") + ' waiting for approval</b><span class="spacer"></span><a class="btn sm" href="#nodes">Review</a></div>' : "";
     var online = rs.filter(function (r) { return health(r).cls !== "bad"; }).length;
     var under = rs.reduce(function (a, r) { return a + (hbOf(r).underruns || 0); }, 0);
@@ -923,6 +1049,7 @@
     $("srcGrid").innerHTML = state.sources.map(function (x) {
       var st = streamState(x.stream), zs = zonesOn(x.stream);
       var origin = [kinds[x.kind] || x.kind || "source", x.device_id];
+      if (sourceStandby(x)) origin.push(sourceStandby(x));
       if (x.connected && x.level.capturing) origin.push("peak " + (x.level.peak_dbfs <= -120 ? "–∞" : x.level.peak_dbfs.toFixed(1)) + " dBFS");
       var fkey = x.device_id + "/forget";
       return '<section class="card srccard" data-src="' + esc(x.device_id) + '">' +
@@ -1049,6 +1176,7 @@
     var m = /^node\/(.+)$/.exec(h);
     var next = m ? "node" : (["console", "nodes", "sources", "activity", "setup"].indexOf(h) >= 0 ? h : "console");
     if (m) nodeKey = m[1];
+    if (!isAdmin() && ["console", "activity"].indexOf(next) < 0) next = "console";
     if (next !== view) { armed = null; window.scrollTo(0, 0); }
     if (next === "setup" && view !== "setup") loadFirmware();
     view = next;
@@ -1087,7 +1215,10 @@
     var act = b.dataset.act, id = b.dataset.id;
     var fail = function (what) { return function (err) { showErr(what + ": " + err.message); b.disabled = false; }; };
 
-    if (act === "page-end") { b.disabled = true; api("POST", "/api/page/end").catch(fail("End page")); }
+    if (act === "signout") {
+      api("POST", "/signout").then(function () { location.reload(); }).catch(fail("Sign out"));
+    }
+    else if (act === "page-end") { b.disabled = true; api("POST", "/api/page/end").catch(fail("End page")); }
     else if (act === "mute") {
       var c = clientById(id);
       if (c) api("POST", "/api/clients/" + encodeURIComponent(id) + "/volume", { percent: c.config.volume.percent, muted: !c.config.volume.muted }).catch(fail("Mute"));
@@ -1266,6 +1397,7 @@
   }
   function connect() {
     var ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+    liveSocket = ws;
     ws.onopen = function () { backoff = 500; link(true, "live · " + location.host); };
     ws.onmessage = function (m) {
       try {
@@ -1275,18 +1407,22 @@
         if (s.build && build && s.build !== build) { location.reload(); return; }
         build = s.build || build;
         if (s.server_time) skew = Date.now() - new Date(s.server_time).getTime();
-        state = { server: s.server || { groups: [], streams: [] }, nodes: s.nodes || [], sources: s.sources || [], codes: s.codes || [], paging: s.paging || {}, latency: s.latency || {}, speakers: s.speakers || {} };
+        state = { server: s.server || { groups: [], streams: [] }, nodes: s.nodes || [], sources: s.sources || [], codes: s.codes || [], paging: s.paging || {}, latency: s.latency || {}, speakers: s.speakers || {},
+          plan: s.plan || {}, events: s.events || [], default_source: s.default_source || "" };
         record();
         render();
       } catch (err) { console.error(err); }
     };
-    ws.onclose = function () {
+    ws.onclose = function (ev) {
+      liveSocket = null;
+      if (ev.code === 4003 || (me && !me.open)) { loadMe(); return; } // signed out, or the event closed
       link(false, "controller unreachable, retrying…");
       setTimeout(connect, backoff);
       backoff = Math.min(backoff * 2, 8000);
     };
   }
-  connect();
+  loadMe();
+  setInterval(loadMe, 60000);
   loadEvents();
   setInterval(loadEvents, 5000);
   tickClock();
