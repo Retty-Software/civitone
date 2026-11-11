@@ -614,8 +614,16 @@
   }
   // Meters rise at once and fall a few percent per frame, like a peak meter.
   var FALL = 5;
+  // At most one frame callback pending. Browsers don't run animation frames
+  // for a hidden tab but keep every callback queued, so one per WebSocket
+  // frame (~10/s) piled up tens of thousands of them in a backgrounded tab,
+  // all run at once when it came back: Brave on Android was killed for it.
+  var settlePending = false;
   function settleMeters() {
+    if (settlePending) return;
+    settlePending = true;
     requestAnimationFrame(function () {
+      settlePending = false;
       document.querySelectorAll("[data-meter]").forEach(function (el) {
         var p = Math.max(+el.dataset.to, (meterPrev[el.dataset.meter] || 0) - FALL);
         el.style.clipPath = clip(p, el.parentElement.classList.contains("vm"));
@@ -1270,14 +1278,15 @@
     ws.onmessage = function (m) {
       try {
         var s = JSON.parse(m.data);
-        if (s.t === "levels") { fast = s.peaks || {}; fastAt = Date.now(); applyFast(); return; }
+        if (s.t === "levels") { fast = s.peaks || {}; fastAt = Date.now(); if (!document.hidden) applyFast(); return; }
         // A new controller build means new page code: reload instead of rendering with stale JS.
         if (s.build && build && s.build !== build) { location.reload(); return; }
         build = s.build || build;
         if (s.server_time) skew = Date.now() - new Date(s.server_time).getTime();
         state = { server: s.server || { groups: [], streams: [] }, nodes: s.nodes || [], sources: s.sources || [], codes: s.codes || [], paging: s.paging || {}, latency: s.latency || {}, speakers: s.speakers || {} };
         record();
-        render();
+        // Nobody sees a hidden tab: keep the state, draw it when it's shown again.
+        if (document.hidden) stale = true; else render();
       } catch (err) { console.error(err); }
     };
     ws.onclose = function () {
@@ -1286,6 +1295,12 @@
       backoff = Math.min(backoff * 2, 8000);
     };
   }
+  var stale = false;
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden || !stale) return;
+    stale = false;
+    render();
+  });
   connect();
   loadEvents();
   setInterval(loadEvents, 5000);
